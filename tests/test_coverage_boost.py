@@ -145,3 +145,20 @@ def test_cli_main_block(monkeypatch):
         hal.cli.main()
     except SystemExit as e:
         assert e.code == 0
+
+
+def test_cli_generate_reproducer_and_replay(tmp_path):
+    c_file = tmp_path / "app.c"
+    c_file.write_text("int main(void) { return 0; }\n")
+
+    reproducer_sh = tmp_path / "run_crash.sh"
+    res_gen = runner.invoke(app, ["generate-reproducer", str(c_file), "-o", str(reproducer_sh)])
+    assert res_gen.exit_code == 0
+    assert reproducer_sh.is_file()
+    content = reproducer_sh.read_text(encoding="utf-8")
+    assert "Compilando app.c" in content
+
+    res_replay = runner.invoke(app, ["replay", str(c_file)])
+    assert res_replay.exit_code == 0
+    assert "Replay forense" in res_replay.stdout
+

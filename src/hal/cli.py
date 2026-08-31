@@ -133,13 +133,41 @@ def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[P
     ))
 
 
+def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
+    """Genera sección de análisis forense y crash para Dredd."""
+    lines = ["## Diagnóstico Forense de Crash y Señales (Hal)\n"]
+    if not diag.es_crash:
+        lines.append("- **Estado:** ✓ Ejecución Exitosa (Sin caídas ni violaciones de memoria)\n")
+        lines.append("> [!TIP]\n> **Proceso Estable:** El programa finalizó correctamente sin arrojar señales fatales ni desbordamiento de pila.\n")
+    else:
+        lines.append(f"- **Señal Fatal:** `{diag.tipo_senal}` ({diag.codigo_senal or 'CRASH'})\n")
+        if diag.archivo_falla and diag.linea_falla:
+            lines.append(f"- **Ubicación:** `{Path(diag.archivo_falla).name}:{diag.linea_falla}` (en `{diag.funcion_falla or 'main'}`)")
+        if diag.direccion_memoria:
+            lines.append(f"- **Dirección de Memoria Inválida:** `{diag.direccion_memoria}`")
+        lines.append(f"- **Causa Raíz:** {diag.causa_raiz_titulo}\n")
+        lines.append(f"> [!CAUTION]\n> **Fallo Fatal:** {diag.explicacion}\n")
+        lines.append(f"**Sugerencia de corrección:** {diag.accion_correctiva}\n")
+        if diag.frames:
+            lines.append("### Pila de Ejecución (Stack Frames)")
+            lines.append("| Frame # | Función | Ubicación |")
+            lines.append("| :---: | :--- | :--- |")
+            for f in diag.frames:
+                loc = f"`{Path(f.archivo).name}:{f.linea}`" if f.archivo and f.linea else (f.archivo or "—")
+                lines.append(f"| {f.nivel} | `{f.funcion}()` | {loc} |")
+            lines.append("")
+    return "\n".join(lines)
+
+
 @app.command("run")
+@app.command("check")
 def run_cmd(
     objetivo: Path = typer.Argument(..., help="Ruta al archivo C (.c) o binario a ejecutar y diagnosticar."),
     args: Optional[List[str]] = typer.Argument(None, help="Argumentos a pasar al programa."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Cadena de texto para enviar a la entrada estándar (stdin)."),
     json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico estructurado en formato JSON."),
     gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta al binario de GDB."),
+    output_md: Optional[Path] = typer.Option(None, "--md", "--output-md", "-o", help="Generar sección de reporte en formato Markdown para fusión en Dredd."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -149,6 +177,13 @@ def run_cmd(
         gdb_path=gdb_path,
     )
 
+    if output_md:
+        md_text = generar_seccion_markdown(diag)
+        output_md.parent.mkdir(parents=True, exist_ok=True)
+        output_md.write_text(md_text, encoding="utf-8")
+        console.print(f"[green]✓ Sección Markdown generada en:[/green] [cyan]{output_md}[/cyan]")
+        raise typer.Exit(code=1 if diag.es_crash else 0)
+
     if json_output:
         print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
         raise typer.Exit(code=1 if diag.es_crash else 0)
@@ -157,17 +192,46 @@ def run_cmd(
     raise typer.Exit(code=1 if diag.es_crash else 0)
 
 
+@app.command("report")
+def report_cmd(
+    objetivo: Path = typer.Argument(..., help="Ruta al archivo C (.c) o binario a diagnosticar."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Ruta de destino del archivo Markdown."),
+    stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
+) -> None:
+    """Genera directamente la sección de reporte Markdown de HAL para Dredd."""
+    diag = inspeccionar_fuente_o_binario(
+        ruta_objetivo=objetivo,
+        args=[],
+        stdin_data=stdin or "",
+    )
+    md_content = generar_seccion_markdown(diag)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(md_content, encoding="utf-8")
+        console.print(f"[green]✓ Reporte Markdown generado en:[/green] [cyan]{output}[/cyan]")
+    else:
+        print(md_content)
+
+
 @app.command("inspect")
 def inspect_cmd(
     binario: Path = typer.Argument(..., help="Binario ejecutable a inspeccionar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico en formato JSON."),
     gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta a GDB."),
+    output_md: Optional[Path] = typer.Option(None, "--md", "--output-md", help="Generar sección de reporte en Markdown."),
 ) -> None:
     """Inspecciona un binario compilado ante posibles fallos de ejecución."""
     diag = inspeccionar_fuente_o_binario(
         ruta_objetivo=binario,
         gdb_path=gdb_path,
     )
+
+    if output_md:
+        md_text = generar_seccion_markdown(diag)
+        output_md.parent.mkdir(parents=True, exist_ok=True)
+        output_md.write_text(md_text, encoding="utf-8")
+        console.print(f"[green]✓ Sección Markdown generada en:[/green] [cyan]{output_md}[/cyan]")
+        raise typer.Exit(code=1 if diag.es_crash else 0)
 
     if json_output:
         print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
@@ -200,9 +264,61 @@ def doctor_cmd() -> None:
     console.print(tabla)
 
 
+@app.command("generate-reproducer")
+def generate_reproducer_cmd(
+    objetivo: Path = typer.Argument(..., help="Archivo .c o binario que produce el crash."),
+    output: Path = typer.Option(Path("reproducer.sh"), "--output", "-o", help="Ruta de destino del script bash."),
+    stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
+    args: Optional[str] = typer.Option(None, "--args", "-a", help="Argumentos de línea de comando."),
+) -> None:
+    """Genera un script autónomo en Bash para reproducir exactamente el crash en cualquier máquina."""
+    is_c = objetivo.suffix == ".c"
+    arg_str = args or ""
+    stdin_str = f"echo '{stdin}' | " if stdin else ""
+
+    if is_c:
+        script = f"""#!/usr/bin/env bash
+# Script autónomo de reproducción generado por HAL
+set -euo pipefail
+echo "Compilando {objetivo.name} con símbolos de depuración y AddressSanitizer..."
+gcc -std=c11 -Wall -Wextra -g -O0 -fsanitize=address,undefined "{objetivo.resolve()}" -o /tmp/crash_app
+echo "Ejecutando binario..."
+{stdin_str}/tmp/crash_app {arg_str}
+"""
+    else:
+        script = f"""#!/usr/bin/env bash
+# Script autónomo de reproducción generado por HAL
+set -euo pipefail
+echo "Ejecutando binario {objetivo.name}..."
+{stdin_str}"{objetivo.resolve()}" {arg_str}
+"""
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(script, encoding="utf-8")
+    output.chmod(0o755)
+    console.print(f"[bold green]✓ Script de reproducción generado exitosamente en:[/bold green] [cyan]{output}[/cyan]")
+
+
+@app.command("replay")
+def replay_cmd(
+    objetivo: Path = typer.Argument(..., help="Archivo .c o binario a re-ejecutar en modo diagnóstico."),
+    stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
+) -> None:
+    """Ejecuta y navega paso a paso la traza forense del crash con renderizado Rich."""
+    console.print(f"[bold cyan]🎬 Replay forense interactivo de HAL sobre:[/bold cyan] [yellow]{objetivo.name}[/yellow]...")
+    diag = inspeccionar_fuente_o_binario(
+        ruta_objetivo=objetivo,
+        args=[],
+        stdin_data=stdin or "",
+    )
+    _renderizar_diagnostico_rich(diag)
+    raise typer.Exit(code=1 if diag.es_crash else 0)
+
+
 def main() -> None:
     app()
 
 
 if __name__ == "__main__":
     main()
+
