@@ -207,6 +207,17 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
             variables_locales=locals_dict,
         ))
 
+    # Parsear registros de CPU
+    registros: Dict[str, str] = {}
+    if "===GDB_REGISTERS===" in gdb_stdout:
+        reg_section = gdb_stdout.split("===GDB_REGISTERS===")[1]
+        for line in reg_section.splitlines():
+            partes = line.strip().split()
+            if len(partes) >= 2 and not line.startswith("="):
+                reg_name = partes[0]
+                reg_val = partes[1]
+                registros[reg_name] = reg_val
+
     # Si no hubo señal detectada pero el proceso terminó con éxito
     if "exited normally" in gdb_stdout or "exited with code 0" in gdb_stdout:
         return DiagnosticoCrash(
@@ -217,11 +228,12 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
             explicacion="El programa ejecutó y finalizó normalmente con código de retorno 0 sin registrar señales de fallo.",
             accion_correctiva="No se requiere ninguna corrección.",
             frames=frames,
+            registros=registros,
             salida_programa=salida_prog,
             es_crash=False,
         )
 
-    return diagnosticar_crash(
+    diag = diagnosticar_crash(
         senal=senal,
         codigo_senal=codigo_senal,
         direccion_memoria=direccion,
@@ -229,6 +241,8 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
         gdb_output=gdb_stdout + "\n" + gdb_stderr,
         salida_prog=salida_prog,
     )
+    diag.registros = registros
+    return diag
 
 
 def inspeccionar_fuente_o_binario(

@@ -34,7 +34,7 @@ class StackFrame:
 class DiagnosticoCrash:
     """Diagnóstico pedagógico estructurado de un fallo en tiempo de ejecución."""
     tipo_senal: str               # SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGBUS
-    codigo_senal: Optional[str]   # SEGV_MAPERR, SEGV_ACCERR, FPE_INTDIV, etc.
+    codigo_senal: Optional[str]   # SEGV_MAPERR, SEGV_ACCERR, FPE_INTDIV, BUS_ADRALN, etc.
     direccion_memoria: Optional[str]
     causa_raiz_titulo: str
     explicacion: str
@@ -44,6 +44,8 @@ class DiagnosticoCrash:
     funcion_falla: Optional[str] = None
     variable_culpable: Optional[str] = None
     frames: List[StackFrame] = field(default_factory=list)
+    registros: Dict[str, str] = field(default_factory=dict)
+    descriptores_abiertos: List[str] = field(default_factory=list)
     salida_programa: str = ""
     es_crash: bool = True
 
@@ -61,5 +63,7 @@ class DiagnosticoCrash:
             "funcion_falla": self.funcion_falla,
             "variable_culpable": self.variable_culpable,
             "frames": [f.to_dict() for f in self.frames],
+            "registros": self.registros,
+            "descriptores_abiertos": self.descriptores_abiertos,
             "salida_programa": self.salida_programa,
         }

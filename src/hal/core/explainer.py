@@ -45,7 +45,37 @@ def diagnosticar_crash(
                     var_culpable = var
                     break
 
-    # 1. Caso: SIGSEGV (Segmentation Fault)
+    # 1. Caso: SIGBUS (Bus Error / Desalineación de memoria)
+    if "BUS" in senal or "BUS_ADRALN" in (codigo_senal or ""):
+        titulo = "Error de Bus / Desalineación de Memoria (SIGBUS / Alignment Fault)"
+        explicacion = (
+            f"El procesador detuvo el programa al intentar acceder a la dirección {direccion_memoria or 'no alineada'}.\n"
+            f"En muchas arquitecturas (ARM, SPARC, RISC-V), los tipos de datos deben residir en direcciones múltiplos de su tamaño "
+            f"(ej: `int` o `float` en múltiplos de 4 bytes, `double` o punteros en múltiplos de 8 bytes).\n"
+            f"Causas comunes: Casteo de punteros incompatibles (ej: `char*` a `int*` en offset impar), uso indebido de `#pragma pack`, "
+            f"o mapeo de archivos con `mmap()` cuyo offset no respeta los límites de página."
+        )
+        accion = (
+            f"1. Verificá que los punteros apunten a direcciones con alineación adecuada (`alignof` o `sizeof(tipo)`).\n"
+            f"2. Evitá castear punteros de tipos pequeños a tipos mayores arbitrariamente (`(int*)(buffer + 1)`).\n"
+            f"3. Si necesitás empaquetar datos, usá `memcpy()` para copiar bytes a una variable local alineada."
+        )
+        return DiagnosticoCrash(
+            tipo_senal="SIGBUS",
+            codigo_senal=codigo_senal or "BUS_ADRALN",
+            direccion_memoria=direccion_memoria,
+            causa_raiz_titulo=titulo,
+            explicacion=explicacion,
+            accion_correctiva=accion,
+            archivo_falla=archivo,
+            linea_falla=linea,
+            funcion_falla=funcion,
+            variable_culpable=var_culpable,
+            frames=frames,
+            salida_programa=salida_prog,
+        )
+
+    # 2. Caso: SIGSEGV (Segmentation Fault)
     if "SEGV" in senal or "SEGMENTATION" in senal.upper() or "SEGMENTATION" in (codigo_senal or "").upper():
         # Analizar si es desreferencia de NULL
         es_null = (
@@ -106,7 +136,7 @@ def diagnosticar_crash(
                 f"Causas comunes: Lectura/escritura fuera de los límites de un arreglo (buffer overflow), uso de un puntero liberado (Use-After-Free) o puntero con valor basura no inicializado."
             )
             accion = (
-                f"1. Revisá los índices de los bucles: recordá que en C los arreglos de tamaño N van desde 0 hasta N-1.\n"
+                f"1. Revisá los índices de los lazos: recordá que en C los arreglos de tamaño N van desde 0 hasta N-1.\n"
                 f"2. Verificá que todas las variables de tipo puntero sean inicializadas con una dirección válida o con NULL.\n"
                 f"3. Si usaste `free(p)`, asignale inmediatamente `p = NULL;` para evitar accesos colgantes."
             )
@@ -126,7 +156,7 @@ def diagnosticar_crash(
             salida_programa=salida_prog,
         )
 
-    # 2. Caso: SIGABRT (Aborted / Assertion Failed / Double Free)
+    # 3. Caso: SIGABRT (Aborted / Assertion Failed / Double Free)
     elif "ABRT" in senal:
         if "free(): double free" in gdb_output or "double free" in salida_prog:
             titulo = "Liberación Doble de Memoria (Double Free)"
@@ -174,7 +204,7 @@ def diagnosticar_crash(
             salida_programa=salida_prog,
         )
 
-    # 3. Caso: SIGFPE (Floating Point Exception / División por Cero)
+    # 4. Caso: SIGFPE (Floating Point Exception / División por Cero)
     elif "FPE" in senal:
         titulo = "Excepción Aritmética (División Entera por Cero o Módulo Cero)"
         explicacion = (
@@ -199,7 +229,7 @@ def diagnosticar_crash(
             salida_programa=salida_prog,
         )
 
-    # 4. Caso genérico / Otros fallos
+    # 5. Caso genérico / Otros fallos
     titulo = f"Fallo por Señal Fatal ({senal})"
     explicacion = f"El programa fue terminado abruptamente por el sistema operativo al recibir la señal {senal}."
     accion = f"1. Inspeccioná la traza de llamadas (stack trace) para ubicar el último punto de ejecución válido."

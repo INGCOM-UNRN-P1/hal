@@ -15,8 +15,13 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from hal import __version__
+from hal.core.advice import obtener_consejos
+from hal.core.doctor import ejecutar_diagnostico_doctor
+from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.inspector import inspeccionar_fuente_o_binario
 from hal.core.models import DiagnosticoCrash
+from hal.core.symbols import desofuscar_direccion, inspeccionar_variables_globales
+from hal.core.valgrind_parser import parsear_log_valgrind
 
 console = Console()
 err_console = Console(stderr=True)
@@ -49,7 +54,7 @@ def main_callback(
     pass
 
 
-def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[Path] = None) -> None:
+def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[Path] = None, mostrar_consejos: bool = False) -> None:
     """Renderiza el diagnóstico pedagógico con formato Rich en terminal."""
     if not diag.es_crash:
         if diag.tipo_senal == "ERROR":
@@ -132,6 +137,11 @@ def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[P
         border_style="green",
     ))
 
+    if mostrar_consejos:
+        console.print("\n[bold cyan]🎓 Consejos Didácticos de Programación Defensiva:[/bold cyan]")
+        for c in obtener_consejos()[:2]:
+            console.print(Panel(f"[bold]{c['regla']}[/bold]\n\n{c['explicacion']}\n\n[green]{c['ejemplo_correcto']}[/green]", title=c['tema'], border_style="cyan"))
+
 
 def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
     """Genera sección de análisis forense y crash para Dredd."""
@@ -168,6 +178,7 @@ def run_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico estructurado en formato JSON."),
     gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta al binario de GDB."),
     output_md: Optional[Path] = typer.Option(None, "--md", "--output-md", "-o", help="Generar sección de reporte en formato Markdown para fusión en Dredd."),
+    advice: bool = typer.Option(False, "--advice", help="Mostrar consejos pedagógicos adicionales."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -188,7 +199,7 @@ def run_cmd(
         print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
         raise typer.Exit(code=1 if diag.es_crash else 0)
 
-    _renderizar_diagnostico_rich(diag, ruta_fuente=objetivo if objetivo.suffix == ".c" else None)
+    _renderizar_diagnostico_rich(diag, ruta_fuente=objetivo if objetivo.suffix == ".c" else None, mostrar_consejos=advice)
     raise typer.Exit(code=1 if diag.es_crash else 0)
 
 
@@ -243,25 +254,10 @@ def inspect_cmd(
 
 @app.command("doctor")
 def doctor_cmd() -> None:
-    """Verifica el estado del entorno (GCC, GDB, configuración de core dumps y límites de sistema)."""
-    tabla = Table(title="Diagnóstico del Entorno HAL")
-    tabla.add_column("Componente", style="bold cyan")
-    tabla.add_column("Estado", justify="center")
-    tabla.add_column("Detalle")
-
-    # GCC
-    gcc = shutil.which("gcc")
-    tabla.add_row("Compilador GCC", "[green]✓ Presente[/green]" if gcc else "[red]✗ Faltante[/red]", gcc or "No encontrado en PATH")
-
-    # GDB
-    gdb = shutil.which("gdb")
-    tabla.add_row("Depurador GDB", "[green]✓ Presente[/green]" if gdb else "[yellow]⚠️ Faltante[/yellow]", gdb or "Instalar gdb para backtraces completos (sudo apt install gdb)")
-
-    # Valgrind
-    valgrind = shutil.which("valgrind")
-    tabla.add_row("Valgrind", "[green]✓ Presente[/green]" if valgrind else "[dim]— Opcional[/dim]", valgrind or "No instalado")
-
-    console.print(tabla)
+    """Verifica el estado del entorno (GCC, GDB, Valgrind, addr2line)."""
+    ok = ejecutar_diagnostico_doctor(console=console)
+    if not ok:
+        raise typer.Exit(code=1)
 
 
 @app.command("generate-reproducer")
@@ -315,10 +311,168 @@ def replay_cmd(
     raise typer.Exit(code=1 if diag.es_crash else 0)
 
 
+@app.command("registers")
+def registers_cmd(
+    objetivo: Path = typer.Argument(..., help="Archivo .c o binario a inspeccionar."),
+    stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
+    json_output: bool = typer.Option(False, "--json", help="Emitir registros en JSON."),
+) -> None:
+    """Muestra los valores de los registros de CPU (RAX, RSP, RIP, etc.) capturados durante el crash."""
+    diag = inspeccionar_fuente_o_binario(ruta_objetivo=objetivo, stdin_data=stdin or "")
+
+    if json_output:
+        print(json.dumps(diag.registros, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0)
+
+    if not diag.registros:
+        console.print("[yellow]No se capturaron registros de CPU (se requiere GDB).[/yellow]")
+        raise typer.Exit(code=0)
+
+    tabla = Table(title="🖥️ Registros de CPU en el Momento del Crash")
+    tabla.add_column("Registro", style="bold cyan")
+    tabla.add_column("Valor Hex / Dirección", style="green")
+
+    for reg, val in sorted(diag.registros.items()):
+        tabla.add_row(reg, val)
+
+    console.print(tabla)
+
+
+@app.command("check-fds")
+def check_fds_cmd(
+    fuente: Path = typer.Argument(..., help="Archivo fuente C a auditar."),
+    json_output: bool = typer.Option(False, "--json", help="Salida en JSON."),
+) -> None:
+    """Audita aperturas de archivos y descriptores huérfanos sin cerrar."""
+    res = auditar_descriptores_archivo(fuente)
+
+    if json_output:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0 if res.get("balance_correcto") else 1)
+
+    if res.get("balance_correcto"):
+        console.print(f"[bold green]✓ Todos los archivos abiertos ({res['total_aperturas']}) fueron cerrados adecuadamente con fclose()/close().[/bold green]")
+        raise typer.Exit(code=0)
+
+    console.print(f"[bold red]❌ Se detectaron {res['total_huerfanos']} descriptores de archivo huérfanos (sin fclose):[/bold red]\n")
+    tabla = Table(title="Descriptores No Cerrados")
+    tabla.add_column("Variable", style="bold yellow")
+    tabla.add_column("Tipo", style="cyan")
+    tabla.add_column("Línea", justify="right", style="green")
+    tabla.add_column("Recurso", style="dim")
+
+    for h in res.get("huerfanos", []):
+        tabla.add_row(h["variable"], h["tipo"], str(h["linea"]), h.get("recurso", ""))
+
+    console.print(tabla)
+    raise typer.Exit(code=1)
+
+
+@app.command("inspect-globals")
+def inspect_globals_cmd(
+    binario: Path = typer.Argument(..., help="Binario a inspeccionar."),
+    json_output: bool = typer.Option(False, "--json", help="Salida en JSON."),
+) -> None:
+    """Inspecciona las variables globales y estáticas (.data y .bss) en la memoria del binario."""
+    vars_list = inspeccionar_variables_globales(binario)
+
+    if json_output:
+        print(json.dumps(vars_list, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0)
+
+    if not vars_list:
+        console.print("[dim]No se detectaron variables globales o estáticas exportadas en la tabla de símbolos.[/dim]")
+        raise typer.Exit(code=0)
+
+    tabla = Table(title=f"🌐 Variables Globales y Estáticas ({binario.name})")
+    tabla.add_column("Nombre", style="bold cyan")
+    tabla.add_column("Dirección", style="green")
+    tabla.add_column("Sección", style="yellow")
+
+    for v in vars_list:
+        tabla.add_row(v["nombre"], v["direccion"], v["seccion"])
+
+    console.print(tabla)
+
+
+@app.command("resolve-addr")
+def resolve_addr_cmd(
+    binario: Path = typer.Argument(..., help="Binario ejecutable con símbolos."),
+    direccion: str = typer.Argument(..., help="Dirección hexadecimal a desofuscar (ej: 0x555555555169)."),
+    json_output: bool = typer.Option(False, "--json", help="Salida en JSON."),
+) -> None:
+    """Traduce una dirección de memoria hexadecimal a archivo, línea y nombre de función."""
+    res = desofuscar_direccion(binario, direccion)
+
+    if json_output:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0)
+
+    console.print(Panel(
+        f"Dirección: [bold cyan]{res['direccion']}[/bold cyan]\n"
+        f"Función: [bold green]{res['funcion']}[/bold green]\n"
+        f"Ubicación: [bold yellow]{res['ubicacion']}[/bold yellow]",
+        title="🔍 Desofuscación de Dirección DWARF",
+        border_style="cyan",
+    ))
+
+
+@app.command("valgrind")
+@app.command("parse-valgrind")
+def valgrind_cmd(
+    log_file: Optional[Path] = typer.Argument(None, help="Archivo de log de Valgrind o leer desde stdin."),
+    json_output: bool = typer.Option(False, "--json", help="Salida en JSON."),
+) -> None:
+    """Parsea reportes de Valgrind Memcheck y traduce violaciones a explicaciones pedagógicas."""
+    if log_file and log_file.is_file():
+        texto = log_file.read_text(encoding="utf-8", errors="ignore")
+    else:
+        texto = sys.stdin.read()
+
+    res = parsear_log_valgrind(texto)
+
+    if json_output:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0 if res["sin_errores"] else 1)
+
+    if res["sin_errores"]:
+        console.print("[bold green]✓ Reporte de Valgrind Limpio: Cero fugas de memoria y cero accesos inválidos.[/bold green]")
+        raise typer.Exit(code=0)
+
+    console.print(f"[bold red]❌ Se detectaron {res['total_errores']} anomalías de memoria en el log de Valgrind:[/bold red]\n")
+    for err in res["errores"]:
+        console.print(Panel(
+            f"[bold red]{err['titulo']}[/bold red]\n\n{err['descripcion']}\n\n[dim]{err['linea_cruda']}[/dim]",
+            title="⚠️ Violación de Memoria (Memcheck)",
+            border_style="red",
+        ))
+
+    if res["fugas_bytes"] > 0:
+        console.print(f"[bold yellow]💧 Fugas de memoria detectadas: {res['fugas_bytes']} bytes sin liberar.[/bold yellow]")
+
+    raise typer.Exit(code=1)
+
+
+@app.command("advice")
+def advice_cmd() -> None:
+    """Muestra consejos pedagógicos y buenas prácticas defensivas para evitar segfaults."""
+    consejos = obtener_consejos()
+    console.print("[bold cyan]🎓 Consejos Didácticos de Programación Defensiva en C (HAL)[/bold cyan]\n")
+
+    for idx, c in enumerate(consejos, 1):
+        console.print(Panel(
+            f"🎯 [bold]{c['regla']}[/bold]\n\n"
+            f"🔍 {c['explicacion']}\n\n"
+            f"[bold green]✓ Correcto:[/bold green]\n{c['ejemplo_correcto']}\n\n"
+            f"[bold red]✗ Incorrecto:[/bold red]\n{c['ejemplo_incorrecto']}",
+            title=f"Consejo #{idx}: {c['tema']}",
+            border_style="cyan",
+        ))
+
+
 def main() -> None:
     app()
 
 
 if __name__ == "__main__":
     main()
-
