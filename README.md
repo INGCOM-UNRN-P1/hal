@@ -57,3 +57,31 @@ hal inspect ./binario_compilado
 # 5. Comprobar salud del entorno (GCC, GDB, Valgrind)
 hal doctor
 ```
+
+## Nuevas Capacidades e Integración con Vasquez
+
+### 6. Simulación de Caídas e Inyección de Fallos en Runtime
+HAL permite provocar y diagnosticar caídas deliberadas para fines formativos o inyectar fallos de sistema en colaboración con `vasquez`:
+
+```bash
+# Provocar caída por desreferencia NULL (SIGSEGV) y diagnosticar
+hal test-crash --type segv
+
+# Provocar caída por división por cero (SIGFPE)
+hal test-crash --type fpe
+
+# Provocar aborto (SIGABRT)
+hal test-crash --type abort
+
+# Inyectar fallos en tiempo de ejecución (delegando en vasquez con LD_PRELOAD)
+hal test-crash --inject "malloc:1,fopen:1"
+
+# Inyectar fallo en realloc o simulación de disco lleno (ENOSPC)
+hal test-crash --inject "realloc:1,write:ENOSPC"
+```
+
+### 7. Generación de Reproductores Autónomos
+```bash
+# Generar script de reproducción autocontenido para compartir con docentes
+hal generate-reproducer programa.c -o reproductor.sh
+```
