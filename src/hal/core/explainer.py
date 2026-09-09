@@ -14,16 +14,24 @@ def diagnosticar_crash(
     frames: List[StackFrame],
     gdb_output: str = "",
     salida_prog: str = "",
+    vasquez_injected: bool = False,
 ) -> DiagnosticoCrash:
     """Genera un diagnóstico pedagógico completo a partir de los datos crudos del fallo."""
-    # Extraer frame culpable (primer frame con archivo/línea conocidos)
+    # Extraer frame culpable (primer frame con archivo/línea conocidos, evitando libc)
     frame_falla = None
     for f in frames:
-        if f.archivo and not f.archivo.startswith("/usr/") and not f.archivo.startswith("??"):
+        if f.archivo and not f.archivo.startswith("/usr/") and not f.archivo.startswith("??") and not f.archivo.startswith("/lib"):
             frame_falla = f
             break
     if not frame_falla and frames:
-        frame_falla = frames[0]
+        for f in frames:
+            if f.funcion and not f.funcion.startswith("__") and f.funcion not in (
+                "raise", "abort", "malloc_printerr", "malloc_printerr_tail", "__pthread_kill_implementation"
+            ):
+                frame_falla = f
+                break
+        if not frame_falla:
+            frame_falla = frames[0]
 
     archivo = frame_falla.archivo if frame_falla else None
     linea = frame_falla.linea if frame_falla else None
@@ -45,6 +53,148 @@ def diagnosticar_crash(
                     var_culpable = var
                     break
 
+    texto_combinado = (gdb_output + "\n" + salida_prog).lower()
+
+    # Detección de Inyección de Fallos por Vasquez
+    vasquez_detectada = (
+        vasquez_injected
+        or "[vasquez]" in texto_combinado
+        or "vasquez" in texto_combinado
+    )
+    vasquez_info: Optional[dict] = None
+    if vasquez_detectada:
+        matches = re.findall(r"\[vasquez\]\s*([^\n\r]+)", gdb_output + "\n" + salida_prog, re.IGNORECASE)
+        detalle_v = "; ".join(m.strip() for m in matches) if matches else "Inyección deliberada de fallos en runtime vía LD_PRELOAD"
+        vasquez_info = {"inyectado": True, "detalle": detalle_v}
+
+    # Mejora 16: Use-After-Free (UAF)
+    is_uaf = (
+        "heap-use-after-free" in texto_combinado
+        or "use-after-free" in texto_combinado
+        or "use after free" in texto_combinado
+        or "freed by thread" in texto_combinado
+        or "recently free'd" in texto_combinado
+        or "was free'd" in texto_combinado
+        or "was freed" in texto_combinado
+    )
+    if is_uaf:
+        titulo = "Acceso a Memoria Ya Liberada (Use-After-Free)"
+        explicacion = (
+            f"El programa intentó acceder a la dirección {direccion_memoria or 'de memoria previa'}, la cual ya había sido devuelta al sistema mediante `free()`.\n"
+            f"Cuando liberás un bloque dinámico con `free(p)`, el sistema operativo o el gestor del Heap recicla ese espacio o lo desmapea. "
+            f"Si tu código conserva el puntero (puntero colgante o dangling pointer) y realiza lecturas o escrituras sobre él, "
+            f"se produce corrupción silenciosa de datos o una caída inmediata por violación de segmento."
+        )
+        accion = (
+            f"1. Seteá el puntero en NULL inmediatamente después de liberarlo: `free(p); p = NULL;`.\n"
+            f"2. Verificá que ninguna otra variable o estructura mantenga una copia huérfana de la dirección liberada.\n"
+            f"3. No intentes leer ni modificar campos de un struct tras invocar su función de destrucción o liberación."
+        )
+        diag = DiagnosticoCrash(
+            tipo_senal=senal if senal != "NINGUNA" else "SIGSEGV",
+            codigo_senal="USE_AFTER_FREE",
+            direccion_memoria=direccion_memoria,
+            causa_raiz_titulo=titulo,
+            explicacion=explicacion,
+            accion_correctiva=accion,
+            archivo_falla=archivo,
+            linea_falla=linea,
+            funcion_falla=funcion,
+            variable_culpable=var_culpable,
+            frames=frames,
+            salida_programa=salida_prog,
+            es_use_after_free=True,
+            vasquez_inyeccion_detectada=vasquez_info,
+        )
+        _enriquecer_con_vasquez(diag)
+        return diag
+
+    # Mejora 23: Auditor de paso de puntero inválido a free() (Invalid Pointer Free)
+    is_invalid_free = (
+        "free(): invalid pointer" in texto_combinado
+        or "munmap_chunk(): invalid pointer" in texto_combinado
+        or "free(): invalid next size" in texto_combinado
+        or "free called on unallocated object" in texto_combinado
+        or "attempting free on address which was not malloc" in texto_combinado
+        or ("invalid pointer" in texto_combinado and "free" in texto_combinado)
+    )
+    if is_invalid_free:
+        titulo = "Puntero Inválido Pasado a free() (Invalid Pointer Free)"
+        explicacion = (
+            f"El gestor de memoria dinámica de la biblioteca estándar (glibc) abortó la ejecución porque se intentó invocar `free()` "
+            f"sobre una dirección de memoria que no corresponde al inicio exacto de un bloque devuelto por `malloc()`, `calloc()` o `realloc()`.\n"
+            f"Causas comunes:\n"
+            f"1. Intentar liberar una variable de la pila (Stack) o memoria estática (ej: `int x; free(&x);` o `char arr[32]; free(arr);`).\n"
+            f"2. Puntero interior o desplazado: haber modificado el puntero base mediante aritmética de punteros (ej: `char *p = malloc(10); p++; free(p);`).\n"
+            f"3. Puntero no inicializado conteniendo valores basura del marco de pila."
+        )
+        accion = (
+            f"1. Pasá a `free()` únicamente el puntero exacto retornado por las funciones de reserva dinámica (`malloc`, `calloc`, `realloc`).\n"
+            f"2. Nunca invoques `free()` sobre variables locales automáticas ni arreglos declarados en la pila (`&variable`).\n"
+            f"3. Si avanzaste un puntero para iterar (`p++`), conservá siempre el puntero inicial retornado por malloc para efectuar la liberación."
+        )
+        diag = DiagnosticoCrash(
+            tipo_senal="SIGABRT",
+            codigo_senal="INVALID_POINTER_FREE",
+            direccion_memoria=direccion_memoria,
+            causa_raiz_titulo=titulo,
+            explicacion=explicacion,
+            accion_correctiva=accion,
+            archivo_falla=archivo,
+            linea_falla=linea,
+            funcion_falla=funcion,
+            variable_culpable=var_culpable,
+            frames=frames,
+            salida_programa=salida_prog,
+            es_invalid_free=True,
+            vasquez_inyeccion_detectada=vasquez_info,
+        )
+        _enriquecer_con_vasquez(diag)
+        return diag
+
+    # Mejora 18: Explicador de señales de aborto por agotamiento de memoria (ENOMEM / OOM Killer)
+    is_oom = (
+        "cannot allocate memory" in texto_combinado
+        or "enomem" in texto_combinado
+        or "out of memory" in texto_combinado
+        or "oom-killer" in texto_combinado
+        or "exceeds maximum object size" in texto_combinado
+        or any("18446744073709551615" in str(f.variables_locales) or "18446744073709551615" in str(f.argumentos) for f in frames)
+    )
+    if is_oom:
+        titulo = "Agotamiento de Memoria del Proceso (ENOMEM / Out-Of-Memory)"
+        explicacion = (
+            f"El sistema operativo o el gestor de memoria no pudo satisfacer la solicitud de asignación de memoria (retornando NULL o abortando).\n"
+            f"Causas comunes:\n"
+            f"1. Solicitud de un tamaño desproporcionado (gigabytes o exabytes), generalmente por pasar un entero con signo negativo a `malloc(size)` "
+            f"que se interpreta como un valor `size_t` (unsigned) exorbitante (ej: `(size_t)-1` = 18446744073709551615 bytes).\n"
+            f"2. Desbordamiento aritmético (integer overflow) al multiplicar `cantidad * sizeof(tipo)`.\n"
+            f"3. Fuga masiva y continua de memoria (Memory Leak) acumulada en un ciclo infinito."
+        )
+        accion = (
+            f"1. Verificá los argumentos pasados a `malloc()`, `calloc()` o `realloc()` asegurándote de que la cantidad sea positiva y razonable.\n"
+            f"2. Chequeá que la multiplicación para el tamaño total no sufra integer overflow antes de reservar.\n"
+            f"3. Validá siempre que el puntero devuelto no sea NULL antes de utilizarlo defensivamente."
+        )
+        diag = DiagnosticoCrash(
+            tipo_senal=senal if senal != "NINGUNA" else "SIGABRT",
+            codigo_senal="ENOMEM_OOM",
+            direccion_memoria=direccion_memoria,
+            causa_raiz_titulo=titulo,
+            explicacion=explicacion,
+            accion_correctiva=accion,
+            archivo_falla=archivo,
+            linea_falla=linea,
+            funcion_falla=funcion,
+            variable_culpable=var_culpable,
+            frames=frames,
+            salida_programa=salida_prog,
+            es_oom_enomem=True,
+            vasquez_inyeccion_detectada=vasquez_info,
+        )
+        _enriquecer_con_vasquez(diag)
+        return diag
+
     # 1. Caso: SIGBUS (Bus Error / Desalineación de memoria)
     if "BUS" in senal or "BUS_ADRALN" in (codigo_senal or ""):
         titulo = "Error de Bus / Desalineación de Memoria (SIGBUS / Alignment Fault)"
@@ -60,7 +210,7 @@ def diagnosticar_crash(
             f"2. Evitá castear punteros de tipos pequeños a tipos mayores arbitrariamente (`(int*)(buffer + 1)`).\n"
             f"3. Si necesitás empaquetar datos, usá `memcpy()` para copiar bytes a una variable local alineada."
         )
-        return DiagnosticoCrash(
+        diag = DiagnosticoCrash(
             tipo_senal="SIGBUS",
             codigo_senal=codigo_senal or "BUS_ADRALN",
             direccion_memoria=direccion_memoria,
@@ -73,7 +223,10 @@ def diagnosticar_crash(
             variable_culpable=var_culpable,
             frames=frames,
             salida_programa=salida_prog,
+            vasquez_inyeccion_detectada=vasquez_info,
         )
+        _enriquecer_con_vasquez(diag)
+        return diag
 
     # 2. Caso: SIGSEGV (Segmentation Fault)
     if "SEGV" in senal or "SEGMENTATION" in senal.upper() or "SEGMENTATION" in (codigo_senal or "").upper():
@@ -99,7 +252,7 @@ def diagnosticar_crash(
                 f"2. Asegurate de que en cada llamada recursiva los argumentos modifiquen su valor hacia el caso base.\n"
                 f"3. Si la recursión es muy profunda por diseño, considerá reescribir el algoritmo de forma iterativa."
             )
-            return DiagnosticoCrash(
+            diag = DiagnosticoCrash(
                 tipo_senal="SIGSEGV",
                 codigo_senal="STACK_OVERFLOW",
                 direccion_memoria=direccion_memoria,
@@ -112,7 +265,10 @@ def diagnosticar_crash(
                 variable_culpable=var_culpable,
                 frames=frames,
                 salida_programa=salida_prog,
+                vasquez_inyeccion_detectada=vasquez_info,
             )
+            _enriquecer_con_vasquez(diag)
+            return diag
 
         if es_null:
             titulo = "Desreferencia de Puntero Nulo (NULL Pointer Dereference)"
@@ -141,7 +297,7 @@ def diagnosticar_crash(
                 f"3. Si usaste `free(p)`, asignale inmediatamente `p = NULL;` para evitar accesos colgantes."
             )
 
-        return DiagnosticoCrash(
+        diag = DiagnosticoCrash(
             tipo_senal="SIGSEGV",
             codigo_senal=codigo_senal or ("SEGV_MAPERR" if es_null else "SEGV_ACCERR"),
             direccion_memoria=direccion_memoria,
@@ -154,7 +310,10 @@ def diagnosticar_crash(
             variable_culpable=var_culpable,
             frames=frames,
             salida_programa=salida_prog,
+            vasquez_inyeccion_detectada=vasquez_info,
         )
+        _enriquecer_con_vasquez(diag)
+        return diag
 
     # 3. Caso: SIGABRT (Aborted / Assertion Failed / Double Free)
     elif "ABRT" in senal:
@@ -189,7 +348,7 @@ def diagnosticar_crash(
             explicacion = f"El programa invocó explícitamente `abort()` o una librería del sistema detectó una inconsistencia irrecuperable."
             accion = f"1. Revisá los últimos mensajes emitidos por el programa antes del fallo."
 
-        return DiagnosticoCrash(
+        diag = DiagnosticoCrash(
             tipo_senal="SIGABRT",
             codigo_senal="ABRT",
             direccion_memoria=direccion_memoria,
@@ -202,7 +361,10 @@ def diagnosticar_crash(
             variable_culpable=var_culpable,
             frames=frames,
             salida_programa=salida_prog,
+            vasquez_inyeccion_detectada=vasquez_info,
         )
+        _enriquecer_con_vasquez(diag)
+        return diag
 
     # 4. Caso: SIGFPE (Floating Point Exception / División por Cero)
     elif "FPE" in senal:
@@ -214,7 +376,7 @@ def diagnosticar_crash(
             f"1. En la línea {linea or '?'}, verificá que el divisor no sea 0 antes de efectuar la división:\n"
             f"   if (divisor == 0) {{ /* manejar error */ }} else {{ res = dividendo / divisor; }}"
         )
-        return DiagnosticoCrash(
+        diag = DiagnosticoCrash(
             tipo_senal="SIGFPE",
             codigo_senal="FPE_INTDIV",
             direccion_memoria=direccion_memoria,
@@ -227,13 +389,16 @@ def diagnosticar_crash(
             variable_culpable=var_culpable,
             frames=frames,
             salida_programa=salida_prog,
+            vasquez_inyeccion_detectada=vasquez_info,
         )
+        _enriquecer_con_vasquez(diag)
+        return diag
 
     # 5. Caso genérico / Otros fallos
     titulo = f"Fallo por Señal Fatal ({senal})"
     explicacion = f"El programa fue terminado abruptamente por el sistema operativo al recibir la señal {senal}."
     accion = f"1. Inspeccioná la traza de llamadas (stack trace) para ubicar el último punto de ejecución válido."
-    return DiagnosticoCrash(
+    diag = DiagnosticoCrash(
         tipo_senal=senal,
         codigo_senal=codigo_senal,
         direccion_memoria=direccion_memoria,
@@ -246,4 +411,21 @@ def diagnosticar_crash(
         variable_culpable=var_culpable,
         frames=frames,
         salida_programa=salida_prog,
+        vasquez_inyeccion_detectada=vasquez_info,
     )
+    _enriquecer_con_vasquez(diag)
+    return diag
+
+
+def _enriquecer_con_vasquez(diag: DiagnosticoCrash) -> None:
+    """Enriquece la explicación diagnóstica si se detectó una inyección deliberada de fallos de Vasquez."""
+    if not diag.vasquez_inyeccion_detectada:
+        return
+    detalle = diag.vasquez_inyeccion_detectada.get("detalle", "Inyección de fallos en runtime")
+    nota = (
+        f"\n\n⚠️ INYECCIÓN DE FALLOS POR VASQUEZ: Este crash se produjo bajo la inyección activa de Vasquez "
+        f"para auditar la programación defensiva ({detalle}). "
+        f"El retorno forzado de NULL o error de llamada al sistema no fue controlado adecuadamente por tu código antes de acceder a la memoria."
+    )
+    if "VASQUEZ" not in diag.explicacion:
+        diag.explicacion += nota

@@ -6,12 +6,137 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from hal.core.explainer import diagnosticar_crash
 from hal.core.models import DiagnosticoCrash, StackFrame
+
+
+def parsear_struct_gdb(texto: str) -> Dict[str, Any]:
+    """Parsea la representación de un struct emitida por GDB (print *var, print var o info locals).
+    
+    Retorna un diccionario estructurado de campos con su valor y tipo inferido.
+    """
+    idx_start = texto.find("{")
+    if idx_start == -1:
+        return {}
+
+    depth = 0
+    idx_end = -1
+    in_str = False
+    escape = False
+    for i in range(idx_start, len(texto)):
+        ch = texto[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if not in_str:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    idx_end = i
+                    break
+    if idx_end == -1:
+        idx_end = len(texto)
+
+    inner = texto[idx_start + 1:idx_end]
+
+    chunks = []
+    curr = []
+    depth = 0
+    in_str = False
+    escape = False
+    for ch in inner:
+        if escape:
+            escape = False
+            curr.append(ch)
+            continue
+        if ch == "\\":
+            escape = True
+            curr.append(ch)
+            continue
+        if ch == '"':
+            in_str = not in_str
+            curr.append(ch)
+            continue
+        if not in_str:
+            if ch in ("{", "("):
+                depth += 1
+            elif ch in ("}", ")"):
+                depth -= 1
+            elif ch == "," and depth == 0:
+                chunks.append("".join(curr).strip())
+                curr = []
+                continue
+        curr.append(ch)
+    if curr:
+        chunks.append("".join(curr).strip())
+
+    campos: Dict[str, Any] = {}
+    for chunk in chunks:
+        if "=" in chunk:
+            k, v = chunk.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            if v.startswith('"'):
+                v = re.sub(r'\\\\(?:[0-9]+|0)', '', v).replace(r'\000', '').replace(r'\0', '').replace('\x00', '')
+            tipo = "valor"
+            if v.startswith('"'):
+                tipo = "string / char[]"
+            elif v.startswith("0x") or v in ("(nil)", "NULL"):
+                tipo = "puntero / hex"
+            elif re.match(r"^-?\d+$", v):
+                tipo = "int"
+            elif re.match(r"^-?\d+\.\d+", v):
+                tipo = "float / double"
+            elif v.startswith("{"):
+                tipo = "struct anidado"
+            campos[k] = {"valor": v, "tipo": tipo}
+    return campos
+
+
+def obtener_libreria_vasquez() -> Optional[Path]:
+    """Localiza o compila dinámicamente la biblioteca inyectora libvasquez_inject.so."""
+    # 1. Intentar importar vasquez si está disponible
+    try:
+        from vasquez.core.cache import get_cached_injector_library
+        return get_cached_injector_library()
+    except Exception:
+        pass
+
+    # 2. Intentar agregar repositorio vasquez hermano en sys.path
+    try:
+        posibles_rutas = [
+            Path(__file__).resolve().parents[4] / "vasquez" / "src",
+            Path("/home/mrtin/dev/tools/vasquez/src"),
+        ]
+        for v_src in posibles_rutas:
+            if v_src.exists() and str(v_src) not in sys.path:
+                sys.path.insert(0, str(v_src))
+                from vasquez.core.cache import get_cached_injector_library
+                return get_cached_injector_library()
+    except Exception:
+        pass
+
+    # 3. Buscar en el directorio de caché de usuario ~/.cache/vasquez/
+    cache_dir = Path.home() / ".cache" / "vasquez"
+    if cache_dir.exists():
+        so_files = sorted(cache_dir.glob("libvasquez_inject_*.so"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if so_files:
+            return so_files[0]
+
+    return None
 
 
 def compilar_codigo_c(
@@ -63,6 +188,8 @@ def ejecutar_con_gdb(
     stdin_data: str = "",
     gdb_path: Optional[str] = None,
     timeout_segundos: int = 5,
+    struct_nombre: Optional[str] = None,
+    env_vars: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, str]:
     """Ejecuta el binario bajo GDB en modo batch y extrae información forense del crash."""
     gdb_bin = gdb_path or shutil.which("gdb") or "gdb"
@@ -74,10 +201,29 @@ def ejecutar_con_gdb(
         gdb_script = f.name
         f.write("set pagination off\n")
         f.write("set confirm off\n")
+        if env_vars:
+            for k, v in env_vars.items():
+                f.write(f"set environment {k} {v}\n")
         args_str = " ".join(f'"{a}"' for a in (args or []))
         if args_str:
             f.write(f"set args {args_str}\n")
         f.write("run\n")
+        if struct_nombre:
+            clean_s = struct_nombre.strip().lstrip("*")
+            f.write("echo ===GDB_STRUCT_BEGIN===\n")
+            f.write("echo \\n\n")
+            f.write("python\n")
+            f.write("try:\n")
+            f.write(f"    v = gdb.parse_and_eval('{clean_s}')\n")
+            f.write("    if v.type.code == gdb.TYPE_CODE_PTR:\n")
+            f.write("        print(v.dereference())\n")
+            f.write("    else:\n")
+            f.write("        print(v)\n")
+            f.write("except Exception:\n")
+            f.write(f"    try:\n        gdb.execute('print {struct_nombre}')\n    except Exception: pass\n")
+            f.write("end\n")
+            f.write("echo ===GDB_STRUCT_END===\n")
+            f.write("echo \\n\n")
         f.write("echo ===GDB_INFO_PROGRAM===\n")
         f.write("info program\n")
         f.write("echo ===GDB_BACKTRACE===\n")
@@ -96,12 +242,16 @@ def ejecutar_con_gdb(
             gdb_script,
             str(binario.resolve()),
         ]
+        full_env = os.environ.copy()
+        if env_vars:
+            full_env.update(env_vars)
         res = subprocess.run(
             cmd,
             input=stdin_data,
             capture_output=True,
             text=True,
             timeout=timeout_segundos + 5,
+            env=full_env,
         )
         return res.returncode, res.stdout, res.stderr
     finally:
@@ -132,7 +282,12 @@ def ejecutar_directo(
         return 1, "", str(e)
 
 
-def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCrash:
+def parsear_salida_gdb(
+    gdb_stdout: str,
+    gdb_stderr: str = "",
+    struct_nombre: Optional[str] = None,
+    vasquez_injected: bool = False,
+) -> DiagnosticoCrash:
     """Parsea las secciones estructuradas emitidas por GDB."""
     senal = "SIGSEGV"
     codigo_senal = None
@@ -141,9 +296,6 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
     salida_prog = ""
 
     # 1. Detectar señal y dirección
-    # Ej: "Program received signal SIGSEGV, Segmentation fault."
-    # Ej: "Program received signal SIGABRT, Aborted."
-    # Ej: "0x0000555555555169 in main () at crash.c:12"
     m_sig = re.search(r"Program received signal (\w+),\s*([^.\n]+)", gdb_stdout)
     if m_sig:
         senal = m_sig.group(1).strip()
@@ -154,12 +306,6 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
         direccion = m_addr.group(1)
 
     # 2. Parsear Backtrace Full
-    # Formato típico:
-    # #0  0x0000555555555169 in invertir_vector (vec=0x0, n=5) at main.c:15
-    #         i = 0
-    #         temp = 0
-    # #1  0x00005555555551d0 in main () at main.c:22
-    #         vec = 0x0
     bt_section = ""
     if "===GDB_BACKTRACE===" in gdb_stdout:
         partes = gdb_stdout.split("===GDB_BACKTRACE===")
@@ -218,6 +364,31 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
                 reg_val = partes[1]
                 registros[reg_name] = reg_val
 
+    # Parsear structs (Mejora 22)
+    campos_struct: Optional[Dict[str, Any]] = None
+    struct_nom = struct_nombre
+    if "===GDB_STRUCT_BEGIN===" in gdb_stdout and "===GDB_STRUCT_END===" in gdb_stdout:
+        struct_section = gdb_stdout.split("===GDB_STRUCT_BEGIN===")[1].split("===GDB_STRUCT_END===")[0]
+        parsed_fields = parsear_struct_gdb(struct_section)
+        if parsed_fields:
+            campos_struct = parsed_fields
+
+    # Fallback: buscar struct en info locals si no se detectó
+    if not campos_struct and "===GDB_LOCALS===" in gdb_stdout:
+        locals_section = gdb_stdout.split("===GDB_LOCALS===")[1].split("===GDB_REGISTERS===")[0]
+        for l_line in locals_section.splitlines():
+            l_line_str = l_line.strip()
+            if "=" in l_line_str and "{" in l_line_str and "}" in l_line_str:
+                v_name, _ = l_line_str.split("=", 1)
+                v_name = v_name.strip()
+                if v_name.isidentifier():
+                    parsed = parsear_struct_gdb(l_line_str)
+                    if parsed:
+                        campos_struct = parsed
+                        if not struct_nom:
+                            struct_nom = v_name
+                        break
+
     # Si no hubo señal detectada pero el proceso terminó con éxito
     if "exited normally" in gdb_stdout or "exited with code 0" in gdb_stdout:
         return DiagnosticoCrash(
@@ -231,6 +402,8 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
             registros=registros,
             salida_programa=salida_prog,
             es_crash=False,
+            campos_struct=campos_struct,
+            struct_nombre=struct_nom,
         )
 
     diag = diagnosticar_crash(
@@ -240,8 +413,11 @@ def parsear_salida_gdb(gdb_stdout: str, gdb_stderr: str = "") -> DiagnosticoCras
         frames=frames,
         gdb_output=gdb_stdout + "\n" + gdb_stderr,
         salida_prog=salida_prog,
+        vasquez_injected=vasquez_injected,
     )
     diag.registros = registros
+    diag.campos_struct = campos_struct
+    diag.struct_nombre = struct_nom
     return diag
 
 
@@ -250,6 +426,14 @@ def inspeccionar_fuente_o_binario(
     args: Optional[List[str]] = None,
     stdin_data: str = "",
     gdb_path: Optional[str] = None,
+    struct_nombre: Optional[str] = None,
+    inyectar_vasquez: bool = False,
+    vasquez_fail_malloc_at: Optional[int] = None,
+    vasquez_fail_realloc_at: Optional[int] = None,
+    vasquez_fail_calloc_at: Optional[int] = None,
+    vasquez_cascade: bool = False,
+    vasquez_garbage_memory: bool = False,
+    vasquez_poison_byte: Optional[int] = None,
 ) -> DiagnosticoCrash:
     """Inspecciona un archivo fuente `.c` (compilándolo previamente) o un binario precompilado."""
     ruta_objetivo = Path(ruta_objetivo)
@@ -263,6 +447,41 @@ def inspeccionar_fuente_o_binario(
             accion_correctiva="Verificá la ruta al archivo e intentalo de nuevo.",
             es_crash=False,
         )
+
+    # Preparar entorno para inyección de Vasquez si se activó
+    env_vars: Dict[str, str] = {}
+    vasquez_activo = (
+        inyectar_vasquez
+        or vasquez_fail_malloc_at is not None
+        or vasquez_fail_realloc_at is not None
+        or vasquez_fail_calloc_at is not None
+        or vasquez_cascade
+        or vasquez_garbage_memory
+    )
+    if vasquez_activo:
+        so_lib = obtener_libreria_vasquez()
+        if so_lib and so_lib.exists():
+            preload_key = "DYLD_INSERT_LIBRARIES" if sys.platform == "darwin" else "LD_PRELOAD"
+            env_vars[preload_key] = str(so_lib.resolve())
+            env_vars["VASQUEZ_TRACE"] = "1"
+        if vasquez_fail_malloc_at is not None and vasquez_fail_malloc_at > 0:
+            env_vars["VASQUEZ_MALLOC_FAIL_AT"] = str(vasquez_fail_malloc_at)
+        elif inyectar_vasquez and vasquez_fail_malloc_at is None and vasquez_fail_realloc_at is None and vasquez_fail_calloc_at is None:
+            env_vars["VASQUEZ_MALLOC_FAIL_AT"] = "1"
+
+        if vasquez_fail_realloc_at is not None and vasquez_fail_realloc_at > 0:
+            env_vars["VASQUEZ_REALLOC_FAIL_AT"] = str(vasquez_fail_realloc_at)
+
+        if vasquez_fail_calloc_at is not None and vasquez_fail_calloc_at > 0:
+            env_vars["VASQUEZ_CALLOC_FAIL_AT"] = str(vasquez_fail_calloc_at)
+
+        if vasquez_cascade:
+            env_vars["VASQUEZ_CASCADE_FAILS"] = "1"
+
+        if vasquez_garbage_memory:
+            env_vars["VASQUEZ_GARBAGE_MEMORY"] = "1"
+            if vasquez_poison_byte is not None:
+                env_vars["VASQUEZ_POISON_BYTE"] = str(vasquez_poison_byte)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -283,8 +502,20 @@ def inspeccionar_fuente_o_binario(
                 )
             binario = bin_comp
 
-        _, stdout, stderr = ejecutar_con_gdb(binario, args=args, stdin_data=stdin_data, gdb_path=gdb_path)
-        diagnostico = parsear_salida_gdb(stdout, stderr)
+        _, stdout, stderr = ejecutar_con_gdb(
+            binario,
+            args=args,
+            stdin_data=stdin_data,
+            gdb_path=gdb_path,
+            struct_nombre=struct_nombre,
+            env_vars=env_vars if env_vars else None,
+        )
+        diagnostico = parsear_salida_gdb(
+            stdout,
+            stderr,
+            struct_nombre=struct_nombre,
+            vasquez_injected=vasquez_activo,
+        )
 
         # Si compilamos el fuente, ajustar el nombre de archivo en los frames
         if ruta_objetivo.suffix in (".c", ".cpp", ".cc") and diagnostico.frames:

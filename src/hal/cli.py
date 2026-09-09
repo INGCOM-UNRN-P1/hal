@@ -130,6 +130,32 @@ def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[P
 
         console.print(tabla_bt)
 
+    # Volcado de Struct en Memoria (Mejora 22)
+    if diag.campos_struct:
+        tabla_struct = Table(title=f"📦 Volcado de Memoria del Struct '{diag.struct_nombre or 'objeto'}' en el Crash")
+        tabla_struct.add_column("Campo", style="bold cyan")
+        tabla_struct.add_column("Tipo", style="yellow")
+        tabla_struct.add_column("Valor en Memoria", style="green")
+        for campo, info in diag.campos_struct.items():
+            if isinstance(info, dict):
+                tipo_str = info.get("tipo", "campo")
+                val_str = str(info.get("valor", "—"))
+            else:
+                val_str = str(info)
+                tipo_str = "hex" if val_str.startswith("0x") else ("str" if val_str.startswith('"') else "valor")
+            tabla_struct.add_row(campo, tipo_str, val_str)
+        console.print(tabla_struct)
+
+    # Alerta de inyección de Vasquez si fue detectada
+    if diag.vasquez_inyeccion_detectada:
+        console.print(Panel(
+            f"[bold magenta]🧪 AUDITORÍA DE RESILIENCIA CON VASQUEZ ACTIVA[/bold magenta]\n\n"
+            f"Se inyectó un fallo deliberado en tiempo de ejecución para auditar la tolerancia a errores de tu código.\n"
+            f"[dim]Detalle:[/dim] [yellow]{diag.vasquez_inyeccion_detectada.get('detalle', 'Inyección LD_PRELOAD')}[/yellow]",
+            title="💉 Inyección de Fallos (Vasquez)",
+            border_style="magenta",
+        ))
+
     # Acción Correctiva
     console.print(Panel(
         f"[bold green]💡 ¿Cómo solucionarlo?[/bold green]\n\n{diag.accion_correctiva}",
@@ -157,7 +183,22 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
             lines.append(f"- **Dirección de Memoria Inválida:** `{diag.direccion_memoria}`")
         lines.append(f"- **Causa Raíz:** {diag.causa_raiz_titulo}\n")
         lines.append(f"> [!CAUTION]\n> **Fallo Fatal:** {diag.explicacion}\n")
+        if diag.vasquez_inyeccion_detectada:
+            lines.append(f"> [!WARNING]\n> **Inyección Activa de Fallos (Vasquez):** {diag.vasquez_inyeccion_detectada.get('detalle', 'Inyección LD_PRELOAD')}\n")
         lines.append(f"**Sugerencia de corrección:** {diag.accion_correctiva}\n")
+        if diag.campos_struct:
+            lines.append(f"### Inspección de Estructura (`{diag.struct_nombre or 'struct'}`)")
+            lines.append("| Campo | Tipo | Valor |")
+            lines.append("| :--- | :--- | :--- |")
+            for campo, info in diag.campos_struct.items():
+                if isinstance(info, dict):
+                    t_str = info.get("tipo", "campo")
+                    v_str = str(info.get("valor", "—"))
+                else:
+                    v_str = str(info)
+                    t_str = "campo"
+                lines.append(f"| `{campo}` | {t_str} | `{v_str}` |")
+            lines.append("")
         if diag.frames:
             lines.append("### Pila de Ejecución (Stack Frames)")
             lines.append("| Frame # | Función | Ubicación |")
@@ -179,6 +220,13 @@ def run_cmd(
     gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta al binario de GDB."),
     output_md: Optional[Path] = typer.Option(None, "--md", "--output-md", "-o", help="Generar sección de reporte en formato Markdown para fusión en Dredd."),
     advice: bool = typer.Option(False, "--advice", help="Mostrar consejos pedagógicos adicionales."),
+    struct_var: Optional[str] = typer.Option(None, "--struct", "-s", help="Nombre de la variable struct o puntero a struct a inspeccionar en memoria."),
+    inject_vasquez: bool = typer.Option(False, "--inject-vasquez", help="Activar inyección de fallos con Vasquez vía LD_PRELOAD."),
+    fail_malloc_at: Optional[int] = typer.Option(None, "--fail-malloc-at", help="Inyectar fallo (NULL) en la N-ésima llamada a malloc."),
+    fail_realloc_at: Optional[int] = typer.Option(None, "--fail-realloc-at", help="Inyectar fallo (NULL) en la N-ésima llamada a realloc."),
+    fail_calloc_at: Optional[int] = typer.Option(None, "--fail-calloc-at", help="Inyectar fallo (NULL) en la N-ésima llamada a calloc."),
+    vasquez_cascade: bool = typer.Option(False, "--cascade", "--vasquez-cascade", help="Activar fallos en cascada tras el primer error."),
+    vasquez_garbage: bool = typer.Option(False, "--garbage-memory", "--vasquez-garbage", help="Envenenar bloques asignados con bytes basura."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -186,6 +234,13 @@ def run_cmd(
         args=args or [],
         stdin_data=stdin or "",
         gdb_path=gdb_path,
+        struct_nombre=struct_var,
+        inyectar_vasquez=inject_vasquez,
+        vasquez_fail_malloc_at=fail_malloc_at,
+        vasquez_fail_realloc_at=fail_realloc_at,
+        vasquez_fail_calloc_at=fail_calloc_at,
+        vasquez_cascade=vasquez_cascade,
+        vasquez_garbage_memory=vasquez_garbage,
     )
 
     if output_md:
@@ -230,11 +285,25 @@ def inspect_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico en formato JSON."),
     gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta a GDB."),
     output_md: Optional[Path] = typer.Option(None, "--md", "--output-md", help="Generar sección de reporte en Markdown."),
+    struct_var: Optional[str] = typer.Option(None, "--struct", "-s", help="Nombre de la variable struct o puntero a struct a inspeccionar."),
+    inject_vasquez: bool = typer.Option(False, "--inject-vasquez", help="Activar inyección de fallos con Vasquez vía LD_PRELOAD."),
+    fail_malloc_at: Optional[int] = typer.Option(None, "--fail-malloc-at", help="Inyectar fallo en la N-ésima llamada a malloc."),
+    fail_realloc_at: Optional[int] = typer.Option(None, "--fail-realloc-at", help="Inyectar fallo en la N-ésima llamada a realloc."),
+    fail_calloc_at: Optional[int] = typer.Option(None, "--fail-calloc-at", help="Inyectar fallo en la N-ésima llamada a calloc."),
+    vasquez_cascade: bool = typer.Option(False, "--cascade", "--vasquez-cascade", help="Activar fallos en cascada."),
+    vasquez_garbage: bool = typer.Option(False, "--garbage-memory", "--vasquez-garbage", help="Envenenar memoria asignada."),
 ) -> None:
     """Inspecciona un binario compilado ante posibles fallos de ejecución."""
     diag = inspeccionar_fuente_o_binario(
         ruta_objetivo=binario,
         gdb_path=gdb_path,
+        struct_nombre=struct_var,
+        inyectar_vasquez=inject_vasquez,
+        vasquez_fail_malloc_at=fail_malloc_at,
+        vasquez_fail_realloc_at=fail_realloc_at,
+        vasquez_fail_calloc_at=fail_calloc_at,
+        vasquez_cascade=vasquez_cascade,
+        vasquez_garbage_memory=vasquez_garbage,
     )
 
     if output_md:
@@ -250,6 +319,47 @@ def inspect_cmd(
 
     _renderizar_diagnostico_rich(diag)
     raise typer.Exit(code=1 if diag.es_crash else 0)
+
+
+@app.command("struct")
+@app.command("inspect-struct")
+def inspect_struct_cmd(
+    objetivo: Path = typer.Argument(..., help="Archivo .c o binario a ejecutar e inspeccionar."),
+    struct_nombre: str = typer.Argument(..., help="Nombre de la variable struct o puntero a struct."),
+    stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
+    json_output: bool = typer.Option(False, "--json", help="Emitir salida en formato JSON."),
+    gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta a GDB."),
+) -> None:
+    """Inspecciona y vuelca los campos de una estructura (struct) en memoria (Mejora 22)."""
+    diag = inspeccionar_fuente_o_binario(
+        ruta_objetivo=objetivo,
+        stdin_data=stdin or "",
+        gdb_path=gdb_path,
+        struct_nombre=struct_nombre,
+    )
+
+    if json_output:
+        print(json.dumps(diag.campos_struct or {}, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0 if diag.campos_struct else 1)
+
+    if not diag.campos_struct:
+        console.print(f"[yellow]No se capturó volcado del struct '{struct_nombre}' (verificá que el símbolo exista en el frame).[/yellow]")
+        raise typer.Exit(code=1)
+
+    tabla_struct = Table(title=f"📦 Volcado de Memoria del Struct '{struct_nombre}'")
+    tabla_struct.add_column("Campo", style="bold cyan")
+    tabla_struct.add_column("Tipo", style="yellow")
+    tabla_struct.add_column("Valor en Memoria", style="green")
+    for campo, info in diag.campos_struct.items():
+        if isinstance(info, dict):
+            t = info.get("tipo", "campo")
+            v = str(info.get("valor", "—"))
+        else:
+            v = str(info)
+            t = "hex" if v.startswith("0x") else ("str" if v.startswith('"') else "valor")
+        tabla_struct.add_row(campo, t, v)
+    console.print(tabla_struct)
+    raise typer.Exit(code=0)
 
 
 @app.command("doctor")

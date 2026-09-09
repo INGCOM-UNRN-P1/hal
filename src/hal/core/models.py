@@ -48,6 +48,12 @@ class DiagnosticoCrash:
     descriptores_abiertos: List[str] = field(default_factory=list)
     salida_programa: str = ""
     es_crash: bool = True
+    campos_struct: Optional[Dict[str, Any]] = None
+    struct_nombre: Optional[str] = None
+    vasquez_inyeccion_detectada: Optional[Dict[str, Any]] = None
+    es_use_after_free: bool = False
+    es_invalid_free: bool = False
+    es_oom_enomem: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,4 +72,10 @@ class DiagnosticoCrash:
             "registros": self.registros,
             "descriptores_abiertos": self.descriptores_abiertos,
             "salida_programa": self.salida_programa,
+            "campos_struct": self.campos_struct,
+            "struct_nombre": self.struct_nombre,
+            "vasquez_inyeccion_detectada": self.vasquez_inyeccion_detectada,
+            "es_use_after_free": self.es_use_after_free,
+            "es_invalid_free": self.es_invalid_free,
+            "es_oom_enomem": self.es_oom_enomem,
         }
