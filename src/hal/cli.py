@@ -17,6 +17,7 @@ from rich.table import Table
 from hal import __version__
 from hal.core.advice import obtener_consejos
 from hal.core.doctor import ejecutar_diagnostico_doctor
+from hal.core.exporter import exportar_discussion_markdown, exportar_html
 from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.inspector import inspeccionar_fuente_o_binario
 from hal.core.models import DiagnosticoCrash
@@ -54,7 +55,12 @@ def main_callback(
     pass
 
 
-def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[Path] = None, mostrar_consejos: bool = False) -> None:
+def _renderizar_diagnostico_rich(
+    diag: DiagnosticoCrash,
+    ruta_fuente: Optional[Path] = None,
+    mostrar_consejos: bool = False,
+    mostrar_todos_frames: bool = False,
+) -> None:
     """Renderiza el diagnóstico pedagógico con formato Rich en terminal."""
     if not diag.es_crash:
         if diag.tipo_senal == "ERROR":
@@ -113,16 +119,40 @@ def _renderizar_diagnostico_rich(diag: DiagnosticoCrash, ruta_fuente: Optional[P
         except Exception:
             pass
 
-    # Call Stack / Backtrace Table
+    # Volcado de argumentos del frame superior / culpable
+    frame_culpable = None
+    for f in diag.frames:
+        if f.archivo and not (f.archivo.startswith("/usr/") or f.archivo.startswith("/lib") or f.archivo.startswith("??")):
+            frame_culpable = f
+            break
+    if not frame_culpable and diag.frames:
+        frame_culpable = diag.frames[0]
+
+    if frame_culpable and frame_culpable.argumentos:
+        tabla_args = Table(title=f"📥 Volcado de Argumentos — Frame #{frame_culpable.nivel} (`{frame_culpable.funcion}`)")
+        tabla_args.add_column("Parámetro", style="bold cyan")
+        tabla_args.add_column("Valor Recibido", style="bold yellow")
+        for arg, val in frame_culpable.argumentos.items():
+            tabla_args.add_row(arg, val)
+        console.print(tabla_args)
+
+    # Call Stack / Backtrace Table con rutas limpias
     if diag.frames:
-        tabla_bt = Table(title="🥞 Pila de Llamadas (Call Stack Backtrace)")
+        frames_mostrar = [
+            f for f in diag.frames
+            if mostrar_todos_frames or not (f.archivo and (f.archivo.startswith("/usr/") or f.archivo.startswith("/lib") or f.archivo.startswith("??")))
+        ]
+        if not frames_mostrar:
+            frames_mostrar = diag.frames
+
+        tabla_bt = Table(title="🥞 Pila de Llamadas (Call Stack — Rutas limpias)")
         tabla_bt.add_column("#", justify="right", style="bold")
         tabla_bt.add_column("Función", style="cyan")
         tabla_bt.add_column("Argumentos", style="dim")
         tabla_bt.add_column("Ubicación", style="yellow")
         tabla_bt.add_column("Variables Locales", style="green")
 
-        for f in diag.frames:
+        for f in frames_mostrar:
             ubicacion = f"{Path(f.archivo).name}:{f.linea}" if f.archivo and f.linea else (f.archivo or "—")
             args_str = ", ".join(f"{k}={v}" for k, v in f.argumentos.items()) if f.argumentos else "—"
             locals_str = ", ".join(f"{k}={v}" for k, v in f.variables_locales.items()) if f.variables_locales else "—"
@@ -227,6 +257,9 @@ def run_cmd(
     fail_calloc_at: Optional[int] = typer.Option(None, "--fail-calloc-at", help="Inyectar fallo (NULL) en la N-ésima llamada a calloc."),
     vasquez_cascade: bool = typer.Option(False, "--cascade", "--vasquez-cascade", help="Activar fallos en cascada tras el primer error."),
     vasquez_garbage: bool = typer.Option(False, "--garbage-memory", "--vasquez-garbage", help="Envenenar bloques asignados con bytes basura."),
+    html_output: Optional[Path] = typer.Option(None, "--html", help="Ruta para exportar el reporte interactivo en HTML."),
+    discussion_md: Optional[Path] = typer.Option(None, "--discussion-md", help="Ruta para exportar plantilla Markdown para GitHub Discussions."),
+    all_frames: bool = typer.Option(False, "--all-frames", help="Mostrar marcos de pila de libc/sistema completos."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -243,6 +276,20 @@ def run_cmd(
         vasquez_garbage_memory=vasquez_garbage,
     )
 
+    if html_output:
+        html_code = exportar_html(diag)
+        html_output.parent.mkdir(parents=True, exist_ok=True)
+        html_output.write_text(html_code, encoding="utf-8")
+        console.print(f"[green]✓ Reporte HTML interactivo generado en:[/green] [cyan]{html_output}[/cyan]")
+        raise typer.Exit(code=1 if diag.es_crash else 0)
+
+    if discussion_md:
+        disc_text = exportar_discussion_markdown(diag)
+        discussion_md.parent.mkdir(parents=True, exist_ok=True)
+        discussion_md.write_text(disc_text, encoding="utf-8")
+        console.print(f"[green]✓ Plantilla para GitHub Discussions generada en:[/green] [cyan]{discussion_md}[/cyan]")
+        raise typer.Exit(code=1 if diag.es_crash else 0)
+
     if output_md:
         md_text = generar_seccion_markdown(diag)
         output_md.parent.mkdir(parents=True, exist_ok=True)
@@ -254,7 +301,12 @@ def run_cmd(
         print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
         raise typer.Exit(code=1 if diag.es_crash else 0)
 
-    _renderizar_diagnostico_rich(diag, ruta_fuente=objetivo if objetivo.suffix == ".c" else None, mostrar_consejos=advice)
+    _renderizar_diagnostico_rich(
+        diag,
+        ruta_fuente=objetivo if objetivo.suffix == ".c" else None,
+        mostrar_consejos=advice,
+        mostrar_todos_frames=all_frames,
+    )
     raise typer.Exit(code=1 if diag.es_crash else 0)
 
 
@@ -263,20 +315,38 @@ def report_cmd(
     objetivo: Path = typer.Argument(..., help="Ruta al archivo C (.c) o binario a diagnosticar."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Ruta de destino del archivo Markdown."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
+    html_output: Optional[Path] = typer.Option(None, "--html", help="Ruta para exportar el reporte interactivo en HTML."),
+    discussion_md: Optional[Path] = typer.Option(None, "--discussion-md", help="Ruta para exportar plantilla Markdown para GitHub Discussions."),
 ) -> None:
-    """Genera directamente la sección de reporte Markdown de HAL para Dredd."""
+    """Genera directamente la sección de reporte Markdown de HAL para Dredd o exporta a HTML/Discussions."""
     diag = inspeccionar_fuente_o_binario(
         ruta_objetivo=objetivo,
         args=[],
         stdin_data=stdin or "",
     )
-    md_content = generar_seccion_markdown(diag)
+
+    if html_output:
+        html_code = exportar_html(diag)
+        html_output.parent.mkdir(parents=True, exist_ok=True)
+        html_output.write_text(html_code, encoding="utf-8")
+        console.print(f"[green]✓ Reporte HTML generado en:[/green] [cyan]{html_output}[/cyan]")
+        raise typer.Exit(code=1 if diag.es_crash else 0)
+
+    if discussion_md:
+        disc_text = exportar_discussion_markdown(diag)
+        discussion_md.parent.mkdir(parents=True, exist_ok=True)
+        discussion_md.write_text(disc_text, encoding="utf-8")
+        console.print(f"[green]✓ Plantilla Discussions generada en:[/green] [cyan]{discussion_md}[/cyan]")
+        raise typer.Exit(code=1 if diag.es_crash else 0)
+
+    md_text = generar_seccion_markdown(diag)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(md_content, encoding="utf-8")
-        console.print(f"[green]✓ Reporte Markdown generado en:[/green] [cyan]{output}[/cyan]")
+        output.write_text(md_text, encoding="utf-8")
+        console.print(f"[green]✓ Reporte Markdown exportado a:[/green] [cyan]{output}[/cyan]")
     else:
-        print(md_content)
+        print(md_text)
+    raise typer.Exit(code=1 if diag.es_crash else 0)
 
 
 @app.command("inspect")

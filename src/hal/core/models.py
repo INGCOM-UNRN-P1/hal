@@ -54,6 +54,10 @@ class DiagnosticoCrash:
     es_use_after_free: bool = False
     es_invalid_free: bool = False
     es_oom_enomem: bool = False
+    es_buffer_overflow_ret: bool = False
+    es_wild_pointer: bool = False
+    es_assert_fallido: bool = False
+    expresion_assert: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -78,4 +82,8 @@ class DiagnosticoCrash:
             "es_use_after_free": self.es_use_after_free,
             "es_invalid_free": self.es_invalid_free,
             "es_oom_enomem": self.es_oom_enomem,
+            "es_buffer_overflow_ret": self.es_buffer_overflow_ret,
+            "es_wild_pointer": self.es_wild_pointer,
+            "es_assert_fallido": self.es_assert_fallido,
+            "expresion_assert": self.expresion_assert,
         }

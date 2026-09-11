@@ -195,6 +195,45 @@ def diagnosticar_crash(
         _enriquecer_con_vasquez(diag)
         return diag
 
+    # Mejora: Detección de Buffer Overflow pisando dirección de retorno ($rip/$eip)
+    is_ret_overflow = (
+        "cannot access memory at address" in texto_combinado
+        or "previous frame inner to this frame" in texto_combinado
+        or "corrupted stack frame" in texto_combinado
+        or (direccion_memoria and any(direccion_memoria.lower().startswith(p) for p in ("0x41414141", "0x61616161", "0x78787878")))
+    )
+    if is_ret_overflow:
+        titulo = "Desbordamiento de Búfer sobre Dirección de Retorno ($rip/$eip Overflow)"
+        explicacion = (
+            f"Una escritura fuera de los límites en un búfer local de la pila (Stack Buffer Overflow) "
+            f"sobrescribió los metadatos del marco de activación, pisando la dirección de retorno ($rip o $eip).\n"
+            f"Al intentar retornar de la función mediante la instrucción `ret`, el procesador intentó saltar a la dirección "
+            f"corrupta ({direccion_memoria or 'inválida'}), generando un fallo inmediato por violación de memoria."
+        )
+        accion = (
+            f"1. Verificá los tamaños de los arreglos locales y los límites de escritura.\n"
+            f"2. Descartá el uso de funciones no seguras como `gets()`, `strcpy()` o `sprintf()`.\n"
+            f"3. Utilizá alternativas acotadas como `fgets()`, `strncpy()` o `snprintf()` especificando el tamaño máximo del búfer de destino."
+        )
+        diag = DiagnosticoCrash(
+            tipo_senal=senal if senal != "NINGUNA" else "SIGSEGV",
+            codigo_senal="RET_ADDR_CORRUPTED",
+            direccion_memoria=direccion_memoria,
+            causa_raiz_titulo=titulo,
+            explicacion=explicacion,
+            accion_correctiva=accion,
+            archivo_falla=archivo,
+            linea_falla=linea,
+            funcion_falla=funcion,
+            variable_culpable=var_culpable,
+            frames=frames,
+            salida_programa=salida_prog,
+            es_buffer_overflow_ret=True,
+            vasquez_inyeccion_detectada=vasquez_info,
+        )
+        _enriquecer_con_vasquez(diag)
+        return diag
+
     # 1. Caso: SIGBUS (Bus Error / Desalineación de memoria)
     if "BUS" in senal or "BUS_ADRALN" in (codigo_senal or ""):
         titulo = "Error de Bus / Desalineación de Memoria (SIGBUS / Alignment Fault)"
@@ -235,8 +274,21 @@ def diagnosticar_crash(
             direccion_memoria in nil_values
             or (direccion_memoria and direccion_memoria.startswith("0x") and int(direccion_memoria, 16) < 0x1000)
             or var_culpable is not None
-            or "SEGV_MAPERR" in (codigo_senal or "")
+            or ("SEGV_MAPERR" in (codigo_senal or "") and (not direccion_memoria or int(direccion_memoria, 16) < 0x1000))
         )
+
+        # Detectar puntero salvaje / no inicializado
+        patrones_basura = ("0xbaad", "0xcccc", "0xdead", "0xfeee", "0xcdcd", "0xabab", "0x555555555555", "0xaaaaaaaa")
+        es_wild = False
+        if direccion_memoria and direccion_memoria not in nil_values:
+            try:
+                val_int = int(direccion_memoria, 16)
+                if val_int >= 0x1000:
+                    addr_lower = direccion_memoria.lower()
+                    if any(p in addr_lower for p in patrones_basura) or "wild pointer" in texto_combinado or "uninitialized" in texto_combinado or ("SEGV_MAPERR" in (codigo_senal or "") and not es_null):
+                        es_wild = True
+            except ValueError:
+                pass
 
         # Detectar si es stack overflow (recursión infinita)
         if len(frames) > 30 and len(set(f.funcion for f in frames)) <= 3:
@@ -265,6 +317,37 @@ def diagnosticar_crash(
                 variable_culpable=var_culpable,
                 frames=frames,
                 salida_programa=salida_prog,
+                vasquez_inyeccion_detectada=vasquez_info,
+            )
+            _enriquecer_con_vasquez(diag)
+            return diag
+
+        if es_wild:
+            titulo = f"Desreferencia de Puntero Salvaje o No Inicializado (Wild Pointer: {direccion_memoria})"
+            explicacion = (
+                f"El programa intentó acceder a la dirección inaccesible {direccion_memoria}.\n"
+                f"En la línea {linea or '?'}, se desreferenció un puntero no inicializado que contenía basura del stack.\n"
+                f"En C, las variables automáticas no se inicializan por defecto. Utilizar un puntero sin asignarle previamente una dirección válida o NULL desata fallos impredecibles."
+            )
+            accion = (
+                f"1. Inicializá siempre los punteros en NULL o con una dirección válida al declararlos:\n"
+                f"   tipo *ptr = NULL;\n"
+                f"2. Verificá que todas las ramas de ejecución asignen el puntero antes de desreferenciarlo."
+            )
+            diag = DiagnosticoCrash(
+                tipo_senal="SIGSEGV",
+                codigo_senal="WILD_POINTER",
+                direccion_memoria=direccion_memoria,
+                causa_raiz_titulo=titulo,
+                explicacion=explicacion,
+                accion_correctiva=accion,
+                archivo_falla=archivo,
+                linea_falla=linea,
+                funcion_falla=funcion,
+                variable_culpable=var_culpable,
+                frames=frames,
+                salida_programa=salida_prog,
+                es_wild_pointer=True,
                 vasquez_inyeccion_detectada=vasquez_info,
             )
             _enriquecer_con_vasquez(diag)
@@ -317,6 +400,16 @@ def diagnosticar_crash(
 
     # 3. Caso: SIGABRT (Aborted / Assertion Failed / Double Free)
     elif "ABRT" in senal:
+        es_assert = False
+        expr_assert = None
+        m_assert = re.search(r"(?:assertion|Assertion)\s+[`'\"]([^`'\"]+)[`'\"]\s+failed", gdb_output + "\n" + salida_prog, re.IGNORECASE)
+        if not m_assert:
+            m_assert = re.search(r"assert\s*\((.*?)\)", gdb_output + "\n" + salida_prog, re.IGNORECASE)
+
+        if m_assert or "assert" in gdb_output.lower() or "assertion" in salida_prog.lower():
+            es_assert = True
+            expr_assert = m_assert.group(1).strip() if m_assert else "condición"
+
         if "free(): double free" in gdb_output or "double free" in salida_prog:
             titulo = "Liberación Doble de Memoria (Double Free)"
             explicacion = (
@@ -335,13 +428,15 @@ def diagnosticar_crash(
                 f"1. Revisá los tamaños pasados a `malloc(n * sizeof(tipo))` y las funciones de copia como `strcpy` / `memcpy`.\n"
                 f"2. Corré el programa con `valgrind` o AddressSanitizer (`-fsanitize=address`) para ubicar la escritura fuera de rango."
             )
-        elif "assert" in gdb_output.lower() or "assertion" in salida_prog.lower():
-            titulo = "Aserción Fallida (`assert()` macro)"
+        elif es_assert:
+            titulo = f"Aserción Fallida: assert({expr_assert or 'condición'})"
             explicacion = (
-                f"Una condición obligatoria definida con `assert(...)` evaluó a falso en tiempo de ejecución, provocando la terminación inmediata del programa."
+                f"La condición obligatoria '{expr_assert or 'condición'}' evaluó a falso (cero) en tiempo de ejecución en la línea {linea or '?'}.\n"
+                f"El macro `assert()` abortó el proceso para salvaguardar la integridad de los datos."
             )
             accion = (
-                f"1. Revisá las precondiciones de la función '{funcion or 'actual'}' y los valores pasados como argumentos."
+                f"1. Revisá los valores de las variables intervinientes en el marco de la función '{funcion or 'actual'}'.\n"
+                f"2. Comprobá las precondiciones antes de invocar la aserción."
             )
         else:
             titulo = "Terminación Anormal Solicitada (Abort)"
@@ -350,7 +445,7 @@ def diagnosticar_crash(
 
         diag = DiagnosticoCrash(
             tipo_senal="SIGABRT",
-            codigo_senal="ABRT",
+            codigo_senal="ASSERT_FAILED" if es_assert else "ABRT",
             direccion_memoria=direccion_memoria,
             causa_raiz_titulo=titulo,
             explicacion=explicacion,
@@ -361,6 +456,8 @@ def diagnosticar_crash(
             variable_culpable=var_culpable,
             frames=frames,
             salida_programa=salida_prog,
+            es_assert_fallido=es_assert,
+            expresion_assert=expr_assert,
             vasquez_inyeccion_detectada=vasquez_info,
         )
         _enriquecer_con_vasquez(diag)
@@ -368,13 +465,28 @@ def diagnosticar_crash(
 
     # 4. Caso: SIGFPE (Floating Point Exception / División por Cero)
     elif "FPE" in senal:
-        titulo = "Excepción Aritmética (División Entera por Cero o Módulo Cero)"
-        explicacion = (
-            f"El procesador generó una interrupción por una operación matemática ilegal (generalmente una división por cero `x / 0` o resto de módulo `x % 0`)."
-        )
+        # Detectar variable con valor 0 en el marco
+        div_var = None
+        if frame_falla:
+            for k, v in {**frame_falla.argumentos, **frame_falla.variables_locales}.items():
+                if str(v).strip() in ("0", "0x0", "+0", "-0"):
+                    div_var = k
+                    break
+        if div_var:
+            var_culpable = div_var
+            titulo = f"Excepción Aritmética: División por Cero (divisor '{div_var}' = 0)"
+            explicacion = (
+                f"El procesador detuvo el programa en la línea {linea or '?'} al intentar realizar una división entera o módulo donde el divisor '{div_var}' vale 0."
+            )
+        else:
+            titulo = "Excepción Aritmética (División Entera por Cero o Módulo Cero)"
+            explicacion = (
+                f"El procesador detuvo el programa en la línea {linea or '?'} por una operación matemática ilegal (división `/ 0` o resto `% 0`)."
+            )
+
         accion = (
-            f"1. En la línea {linea or '?'}, verificá que el divisor no sea 0 antes de efectuar la división:\n"
-            f"   if (divisor == 0) {{ /* manejar error */ }} else {{ res = dividendo / divisor; }}"
+            f"1. En la línea {linea or '?'}, verificá que el divisor no sea 0 antes de efectuar la operación:\n"
+            f"   if ({div_var or 'divisor'} == 0) {{ /* manejar error */ }} else {{ res = dividendo / {div_var or 'divisor'}; }}"
         )
         diag = DiagnosticoCrash(
             tipo_senal="SIGFPE",
