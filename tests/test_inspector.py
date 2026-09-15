@@ -87,3 +87,16 @@ def test_compilacion_y_ejecucion_segfault_real(tmp_path):
     assert diag.es_crash is True
     assert diag.tipo_senal == "SIGSEGV"
     assert "NULL" in diag.causa_raiz_titulo or "0x0" in str(diag.direccion_memoria)
+
+
+def test_crash_json_schema_version_and_compatibility():
+    """Verifica que to_dict emita schema_version y claves compatibles con spunkmeyer."""
+    frames = [StackFrame(nivel=0, funcion="main", archivo="app.c", linea=42)]
+    diag = diagnosticar_crash("SIGSEGV", "SEGV_MAPERR", "0x0", frames)
+    data = diag.to_dict()
+    assert data["schema_version"] == "1.0.0"
+    assert data["archivo_falla"] == "app.c"
+    assert data["linea_falla"] == 42
+    assert data["archivo"] == "app.c"
+    assert data["linea"] == 42
+

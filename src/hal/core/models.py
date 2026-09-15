@@ -61,6 +61,7 @@ class DiagnosticoCrash:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "schema_version": "1.0.0",
             "es_crash": self.es_crash,
             "tipo_senal": self.tipo_senal,
             "codigo_senal": self.codigo_senal,
@@ -70,6 +71,8 @@ class DiagnosticoCrash:
             "accion_correctiva": self.accion_correctiva,
             "archivo_falla": self.archivo_falla,
             "linea_falla": self.linea_falla,
+            "archivo": self.archivo_falla,
+            "linea": self.linea_falla,
             "funcion_falla": self.funcion_falla,
             "variable_culpable": self.variable_culpable,
             "frames": [f.to_dict() for f in self.frames],
