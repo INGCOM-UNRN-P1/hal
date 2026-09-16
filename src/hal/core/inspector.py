@@ -168,6 +168,23 @@ def _compilar_con_daedalus(
         return None
 
 
+def _try_import_nostromo():
+    try:
+        from nostromo.core.sandbox import ejecutar_aislado
+        return ejecutar_aislado
+    except ImportError:
+        import sys
+        sibling = Path(__file__).resolve().parents[4] / "nostromo" / "src"
+        if sibling.is_dir() and str(sibling) not in sys.path:
+            sys.path.insert(0, str(sibling))
+            try:
+                from nostromo.core.sandbox import ejecutar_aislado
+                return ejecutar_aislado
+            except ImportError:
+                return None
+        return None
+
+
 def compilar_codigo_c(
     archivo_c: Path,
     directorio_destino: Path,
@@ -300,8 +317,19 @@ def ejecutar_directo(
     timeout_segundos: int = 5,
 ) -> Tuple[int, str, str]:
     """Ejecución directa como fallback cuando GDB no está instalado."""
-    cmd = [str(binario.resolve())] + (args or [])
     try:
+        nostromo_fn = _try_import_nostromo()
+        if nostromo_fn:
+            res_aislado = nostromo_fn(
+                binario,
+                args=args,
+                stdin_texto=stdin_data,
+                timeout_segundos=float(timeout_segundos),
+                memoria_mb=64,
+            )
+            return res_aislado.codigo_retorno, res_aislado.stdout, res_aislado.stderr
+
+        cmd = [str(binario.resolve())] + (args or [])
         res = subprocess.run(
             cmd,
             input=stdin_data,
