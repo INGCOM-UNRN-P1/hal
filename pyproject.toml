@@ -7,19 +7,48 @@ name = "hal"
 version = "0.1.0"
 description = "Asistente forense de core dumps y análisis pedagógico post-mortem de segfaults en C"
 readme = "README.md"
-requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Martín René Vilugrón", email = "martinvilu@gmail.com"}
+]
+maintainers = [
+    {name = "Programación I [B6003] - UNRN Andina"}
+]
+requires-python = ">=3.11"
+keywords = ["education", "c-programming", "pedagogical-tools", "unrn"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "pyyaml>=6.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/INGCOM-UNRN-P1/hal"
+Repository = "https://github.com/INGCOM-UNRN-P1/hal.git"
+Issues = "https://github.com/INGCOM-UNRN-P1/hal/issues"
+
 [project.scripts]
 hal = "hal.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hal"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-
