@@ -139,17 +139,51 @@ def obtener_libreria_vasquez() -> Optional[Path]:
     return None
 
 
+def _compilar_con_daedalus(
+    archivo_c: Path,
+    binario_out: Path,
+    flags_adicionales: Optional[List[str]] = None,
+) -> Optional[Tuple[bool, Optional[Path], str]]:
+    try:
+        from daedalus.core.compiler import compilar_archivos
+        flags = ["-g", "-O0"]
+        if flags_adicionales:
+            flags.extend(flags_adicionales)
+        res = compilar_archivos([archivo_c], binario_salida=binario_out, flags_adicionales=flags)
+        return res.exito, (binario_out if res.exito else None), res.stderr_crudo
+    except ImportError:
+        import sys
+        sibling = Path(__file__).resolve().parents[4] / "daedalus" / "src"
+        if sibling.is_dir() and str(sibling) not in sys.path:
+            sys.path.insert(0, str(sibling))
+            try:
+                from daedalus.core.compiler import compilar_archivos
+                flags = ["-g", "-O0"]
+                if flags_adicionales:
+                    flags.extend(flags_adicionales)
+                res = compilar_archivos([archivo_c], binario_salida=binario_out, flags_adicionales=flags)
+                return res.exito, (binario_out if res.exito else None), res.stderr_crudo
+            except ImportError:
+                return None
+        return None
+
+
 def compilar_codigo_c(
     archivo_c: Path,
     directorio_destino: Path,
     flags_adicionales: Optional[List[str]] = None,
 ) -> Tuple[bool, Optional[Path], str]:
-    """Compila el código C con símbolos de depuración (-g -O0)."""
+    """Compila el código C con símbolos de depuración (-g -O0) delegando en DAEDALUS."""
     if not archivo_c.is_file():
         return False, None, f"El archivo '{archivo_c}' no existe."
 
-    gcc_path = shutil.which("gcc") or "gcc"
     binario_out = directorio_destino / archivo_c.stem
+
+    daed_res = _compilar_con_daedalus(archivo_c, binario_out, flags_adicionales)
+    if daed_res is not None:
+        return daed_res
+
+    gcc_path = shutil.which("gcc") or "gcc"
 
     cmd = [
         gcc_path,
