@@ -16,7 +16,7 @@ from rich.table import Table
 
 from hal import __version__
 from hal.core.advice import obtener_consejos
-from hal.core.doctor import ejecutar_diagnostico_doctor
+from hal.core.doctor import ejecutar_diagnostico_doctor, obtener_estado_doctor
 from hal.core.exporter import exportar_discussion_markdown, exportar_html
 from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.inspector import inspeccionar_fuente_o_binario
@@ -317,6 +317,7 @@ def report_cmd(
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
     html_output: Optional[Path] = typer.Option(None, "--html", help="Ruta para exportar el reporte interactivo en HTML."),
     discussion_md: Optional[Path] = typer.Option(None, "--discussion-md", help="Ruta para exportar plantilla Markdown para GitHub Discussions."),
+    json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico en formato JSON."),
 ) -> None:
     """Genera directamente la sección de reporte Markdown de HAL para Dredd o exporta a HTML/Discussions."""
     diag = inspeccionar_fuente_o_binario(
@@ -324,6 +325,10 @@ def report_cmd(
         args=[],
         stdin_data=stdin or "",
     )
+
+    if json_output:
+        print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
+        raise typer.Exit(code=1 if diag.es_crash else 0)
 
     if html_output:
         html_code = exportar_html(diag)
@@ -433,8 +438,15 @@ def inspect_struct_cmd(
 
 
 @app.command("doctor")
-def doctor_cmd() -> None:
+def doctor_cmd(
+    json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico del entorno en formato JSON."),
+) -> None:
     """Verifica el estado del entorno (GCC, GDB, Valgrind, addr2line)."""
+    if json_output:
+        estado = obtener_estado_doctor()
+        print(json.dumps(estado, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0 if estado["ok"] else 1)
+
     ok = ejecutar_diagnostico_doctor(console=console)
     if not ok:
         raise typer.Exit(code=1)
@@ -446,6 +458,7 @@ def generate_reproducer_cmd(
     output: Path = typer.Option(Path("reproducer.sh"), "--output", "-o", help="Ruta de destino del script bash."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
     args: Optional[str] = typer.Option(None, "--args", "-a", help="Argumentos de línea de comando."),
+    json_output: bool = typer.Option(False, "--json", help="Emitir metadatos del script reproductor en JSON."),
 ) -> None:
     """Genera un script autónomo en Bash para reproducir exactamente el crash en cualquier máquina."""
     is_c = objetivo.suffix == ".c"
@@ -472,6 +485,18 @@ echo "Ejecutando binario {objetivo.name}..."
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(script, encoding="utf-8")
     output.chmod(0o755)
+
+    if json_output:
+        res = {
+            "ok": True,
+            "script_path": str(output),
+            "objetivo": objetivo.name,
+            "es_fuente_c": is_c,
+            "tamano_bytes": len(script.encode("utf-8")),
+        }
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return
+
     console.print(f"[bold green]✓ Script de reproducción generado exitosamente en:[/bold green] [cyan]{output}[/cyan]")
 
 
@@ -479,14 +504,19 @@ echo "Ejecutando binario {objetivo.name}..."
 def replay_cmd(
     objetivo: Path = typer.Argument(..., help="Archivo .c o binario a re-ejecutar en modo diagnóstico."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
+    json_output: bool = typer.Option(False, "--json", help="Emitir resultado del replay en formato JSON."),
 ) -> None:
     """Ejecuta y navega paso a paso la traza forense del crash con renderizado Rich."""
-    console.print(f"[bold cyan]🎬 Replay forense interactivo de HAL sobre:[/bold cyan] [yellow]{objetivo.name}[/yellow]...")
     diag = inspeccionar_fuente_o_binario(
         ruta_objetivo=objetivo,
         args=[],
         stdin_data=stdin or "",
     )
+    if json_output:
+        print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
+        raise typer.Exit(code=1 if diag.es_crash else 0)
+
+    console.print(f"[bold cyan]🎬 Replay forense interactivo de HAL sobre:[/bold cyan] [yellow]{objetivo.name}[/yellow]...")
     _renderizar_diagnostico_rich(diag)
     raise typer.Exit(code=1 if diag.es_crash else 0)
 
@@ -634,9 +664,15 @@ def valgrind_cmd(
 
 
 @app.command("advice")
-def advice_cmd() -> None:
+def advice_cmd(
+    json_output: bool = typer.Option(False, "--json", help="Emitir consejos pedagógicos en formato JSON."),
+) -> None:
     """Muestra consejos pedagógicos y buenas prácticas defensivas para evitar segfaults."""
     consejos = obtener_consejos()
+    if json_output:
+        print(json.dumps(consejos, indent=2, ensure_ascii=False))
+        raise typer.Exit(code=0)
+
     console.print("[bold cyan]🎓 Consejos Didácticos de Programación Defensiva en C (HAL)[/bold cyan]\n")
 
     for idx, c in enumerate(consejos, 1):

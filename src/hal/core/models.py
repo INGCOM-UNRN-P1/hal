@@ -7,6 +7,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def _normalizar_ruta_relativa(ruta: Optional[str]) -> Optional[str]:
+    """Normaliza una ruta de archivo para que sea relativa al CWD o su nombre base, evitando rutas absolutas locales."""
+    if not ruta:
+        return None
+    p = Path(ruta)
+    try:
+        # Si es relativa o está dentro de cwd, usar ruta relativa limpia
+        return str(p.resolve().relative_to(Path.cwd()))
+    except (ValueError, RuntimeError):
+        return p.name
+
+
 @dataclass
 class StackFrame:
     """Representa un frame individual en el call stack del crash."""
@@ -22,7 +34,7 @@ class StackFrame:
         return {
             "nivel": self.nivel,
             "funcion": self.funcion,
-            "archivo": self.archivo,
+            "archivo": _normalizar_ruta_relativa(self.archivo),
             "linea": self.linea,
             "argumentos": self.argumentos,
             "variables_locales": self.variables_locales,
@@ -60,6 +72,7 @@ class DiagnosticoCrash:
     expresion_assert: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        ruta_rel = _normalizar_ruta_relativa(self.archivo_falla)
         return {
             "schema_version": "1.0.0",
             "es_crash": self.es_crash,
@@ -69,9 +82,9 @@ class DiagnosticoCrash:
             "causa_raiz_titulo": self.causa_raiz_titulo,
             "explicacion": self.explicacion,
             "accion_correctiva": self.accion_correctiva,
-            "archivo_falla": self.archivo_falla,
+            "archivo_falla": ruta_rel,
             "linea_falla": self.linea_falla,
-            "archivo": self.archivo_falla,
+            "archivo": ruta_rel,
             "linea": self.linea_falla,
             "funcion_falla": self.funcion_falla,
             "variable_culpable": self.variable_culpable,

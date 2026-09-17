@@ -28,8 +28,19 @@ HAL es una herramienta standalone diseñada para diagnosticar fallos en tiempo d
 ### Dependencias Externas y Binarios
 - `gdb`, `gcc` (con símbolos de depuración `-g`).
 
-### Integración en el Ecosistema
-- CLI `hal`. Subcomando `hal doctor`. Integración con `dredd` para diagnóstico de fallos en entregas.
+### Integración en el Ecosistema y Frontera R-B6
+- **Responsabilidad Canónica:** `R-B6` — Análisis forense post-mortem de caídas por señales (`SIGSEGV`, `SIGABRT`, `SIGFPE`, `SIGILL`, `SIGBUS`) y diagnóstico explicativo pedagógico.
+- **Contrato Estructurado:** CLI emite JSON versión 1.0.0 (`schema_version: "1.0.0"`) conteniendo diagnóstico estructurado (`tipo_senal`, `causa_raiz_titulo`, `explicacion`, `accion_correctiva`, `archivo_falla`/`archivo`, `linea_falla`/`linea`, `frames`, etc.).
+- **Consumidores:**
+  - `spunkmeyer`: consume `archivo` y `linea` para correlacionar caídas de ejecución con antipatrones estáticos detectados (`spunkmeyer correlate-hal`).
+  - `nostromo`: consume `hal.core.inspector:inspeccionar_fuente_o_binario` ante fallos catastróficos por señales (`SEGFAULT`, `ABORT`, `FPE`) en suites de testcases.
+  - `dredd`: consume `hal run --md` / `hal report` (sección `hal.md` en reportes de corrección docente).
+  - `ripley`: orquestador microkernel. Los diagnósticos de crash pueden ser consumidos vía subprocess `hal run <archivo> --json` o inspección directa en Python.
+- **Delegaciones Formales:**
+  - Compilación cátedra: delegada en daedalus (`daedalus compile`).
+  - Inyección deliberada en runtime: delegada en vasquez (`LD_PRELOAD` de `libvasquez_inject.so`).
+  - Sandboxing de ejecución: delegado en nostromo.
+  - Análisis de sanitizers: delegado en tetsuo.
 
 ---
 
@@ -54,34 +65,57 @@ hal run programa.c arg1 arg2 --stdin "10\n20\n"
 # 4. Inspeccionar un binario precompilado
 hal inspect ./binario_compilado
 
-# 5. Comprobar salud del entorno (GCC, GDB, Valgrind)
+# 5. Comprobar salud del entorno (GCC, GDB, Valgrind, addr2line)
 hal doctor
+hal doctor --json
 ```
 
-## Nuevas Capacidades e Integración con Vasquez
+## Capacidades Avanzadas e Integración con Vasquez
 
-### 6. Simulación de Caídas e Inyección de Fallos en Runtime
-HAL permite provocar y diagnosticar caídas deliberadas para fines formativos o inyectar fallos de sistema en colaboración con `vasquez`:
+### 6. Auditoría de Resiliencia e Inyección de Fallos en Runtime (Vasquez)
+HAL permite evaluar la robustez del programa frente a fallos del entorno (memoria agotada, punteros nulos forzados) integrándose con `vasquez` vía `LD_PRELOAD`:
 
 ```bash
-# Provocar caída por desreferencia NULL (SIGSEGV) y diagnosticar
-hal test-crash --type segv
+# Inyectar fallo en la 1° llamada a malloc
+hal run programa.c --inject-vasquez --fail-malloc-at 1
 
-# Provocar caída por división por cero (SIGFPE)
-hal test-crash --type fpe
+# Inyectar fallo en la 2° llamada a realloc o calloc
+hal run programa.c --inject-vasquez --fail-realloc-at 2
+hal run programa.c --inject-vasquez --fail-calloc-at 1
 
-# Provocar aborto (SIGABRT)
-hal test-crash --type abort
+# Cascada de fallos: fallar todas las reservas posteriores al primer fallo
+hal run programa.c --inject-vasquez --fail-malloc-at 1 --cascade
 
-# Inyectar fallos en tiempo de ejecución (delegando en vasquez con LD_PRELOAD)
-hal test-crash --inject "malloc:1,fopen:1"
-
-# Inyectar fallo en realloc o simulación de disco lleno (ENOSPC)
-hal test-crash --inject "realloc:1,write:ENOSPC"
+# Rellenar memoria asignada con bytes basura no nulos (0xAA)
+hal run programa.c --inject-vasquez --garbage-memory
 ```
 
-### 7. Generación de Reproductores Autónomos
+### 7. Repetición Forense y Generación de Reproductores Autónomos
 ```bash
-# Generar script de reproducción autocontenido para compartir con docentes
+# Re-ejecutar interactivamente paso a paso la traza forense del crash
+hal replay programa.c
+
+# Generar script de reproducción autocontenido en Bash para compartir
 hal generate-reproducer programa.c -o reproductor.sh
+```
+
+### 8. Inspección de Estructuras, Registros y Descriptores
+```bash
+# Inspeccionar variables y campos de struct en el punto de quiebre
+hal inspect-struct programa.c mi_nodo
+
+# Volcar registros de CPU (RAX, RSP, RIP) en formato estructurado
+hal registers programa.c --json
+
+# Auditar balance de descriptores de archivo (FILE* y fd)
+hal check-fds programa.c
+
+# Desofuscar una dirección de memoria DWARF a archivo y línea
+hal resolve-addr ./binario 0x555555555169
+
+# Parsear reporte de Valgrind Memcheck a explicaciones en lenguaje natural
+hal parse-valgrind valgrind.log
+
+# Consultar consejos pedagógicos didácticos
+hal advice --json
 ```

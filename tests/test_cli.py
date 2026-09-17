@@ -43,3 +43,37 @@ def test_cli_run_json_output(tmp_path):
     data = json.loads(res.stdout)
     assert data["es_crash"] is True
     assert data["tipo_senal"] == "SIGSEGV"
+    assert data["schema_version"] == "1.0.0"
+    assert "archivo" in data
+    assert "linea" in data
+    # Comprobar que no se filtran rutas absolutas en archivo_falla
+    assert not data["archivo_falla"].startswith("/")
+
+
+def test_cli_doctor_json():
+    res = runner.invoke(app, ["doctor", "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.stdout)
+    assert "ok" in data
+    assert "herramientas" in data
+    assert "gcc" in data["herramientas"]
+
+
+def test_cli_advice_json():
+    res = runner.invoke(app, ["advice", "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.stdout)
+    assert isinstance(data, list)
+    assert len(data) >= 3
+    assert "regla" in data[0]
+
+
+def test_cli_generate_reproducer_json(tmp_path):
+    fuente = tmp_path / "crash.c"
+    fuente.write_text("int main(void) { return 0; }\n")
+    out_sh = tmp_path / "reprod.sh"
+    res = runner.invoke(app, ["generate-reproducer", str(fuente), "-o", str(out_sh), "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.stdout)
+    assert data["ok"] is True
+    assert out_sh.is_file()
