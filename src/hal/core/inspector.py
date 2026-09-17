@@ -115,17 +115,14 @@ def obtener_libreria_vasquez() -> Optional[Path]:
     except Exception:
         pass
 
-    # 2. Intentar agregar repositorio vasquez hermano en sys.path
+    # 2. Intentar agregar repositorio vasquez hermano en sys.path relativo
     try:
-        posibles_rutas = [
-            Path(__file__).resolve().parents[4] / "vasquez" / "src",
-            Path("/home/mrtin/dev/tools/vasquez/src"),
-        ]
-        for v_src in posibles_rutas:
-            if v_src.exists() and str(v_src) not in sys.path:
-                sys.path.insert(0, str(v_src))
-                from vasquez.core.cache import get_cached_injector_library
-                return get_cached_injector_library()
+        # Resolver relativo al archivo actual dentro del monorepo / subdirectorios
+        hermano_vasquez = Path(__file__).resolve().parents[4] / "vasquez" / "src"
+        if hermano_vasquez.exists() and str(hermano_vasquez) not in sys.path:
+            sys.path.insert(0, str(hermano_vasquez))
+            from vasquez.core.cache import get_cached_injector_library
+            return get_cached_injector_library()
     except Exception:
         pass
 
