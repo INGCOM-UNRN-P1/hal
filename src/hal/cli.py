@@ -201,7 +201,11 @@ def _renderizar_diagnostico_rich(
 
 def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
     """Genera sección de análisis forense y crash para Dredd."""
-    lines = ["## Diagnóstico Forense de Crash y Señales (Hal)\n"]
+    status = "fail" if diag.es_crash else "ok"
+    lines = [
+        f"<!-- dredd-section: hal, tool=hal, version=1.0.0, status={status} -->\n",
+        "## Diagnóstico Forense de Crash y Señales (Hal)\n",
+    ]
     if not diag.es_crash:
         lines.append("- **Estado:** ✓ Ejecución Exitosa (Sin caídas ni violaciones de memoria)\n")
         lines.append("> [!TIP]\n> **Proceso Estable:** El programa finalizó correctamente sin arrojar señales fatales ni desbordamiento de pila.\n")
@@ -227,7 +231,10 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
                 else:
                     v_str = str(info)
                     t_str = "campo"
-                lines.append(f"| `{campo}` | {t_str} | `{v_str}` |")
+                c_limpio = str(campo).replace("|", "&#124;")
+                t_limpio = str(t_str).replace("|", "&#124;")
+                v_limpio = str(v_str).replace("|", "&#124;")
+                lines.append(f"| `{c_limpio}` | {t_limpio} | `{v_limpio}` |")
             lines.append("")
         if diag.frames:
             lines.append("### Pila de Ejecución (Stack Frames)")
@@ -235,7 +242,9 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
             lines.append("| :---: | :--- | :--- |")
             for f in diag.frames:
                 loc = f"`{Path(f.archivo).name}:{f.linea}`" if f.archivo and f.linea else (f.archivo or "—")
-                lines.append(f"| {f.nivel} | `{f.funcion}()` | {loc} |")
+                fn_limpio = str(f.funcion).replace("|", "&#124;")
+                loc_limpio = str(loc).replace("|", "&#124;")
+                lines.append(f"| {f.nivel} | `{fn_limpio}()` | {loc_limpio} |")
             lines.append("")
     return "\n".join(lines)
 
