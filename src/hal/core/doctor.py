@@ -16,14 +16,27 @@ def obtener_estado_doctor() -> Dict[str, Any]:
     valgrind = shutil.which("valgrind")
     addr2line = shutil.which("addr2line")
 
+    from hal import __version__
+
+    herramientas = {
+        "gcc": {"presente": gcc is not None, "ruta": gcc, "requerido": True},
+        "gdb": {"presente": gdb is not None, "ruta": gdb, "requerido": False},
+        "valgrind": {"presente": valgrind is not None, "ruta": valgrind, "requerido": False},
+        "addr2line": {"presente": addr2line is not None, "ruta": addr2line, "requerido": False},
+    }
     return {
+        # Sobre común de `doctor --json` (N-ECO-04); "herramientas" se conserva
+        # por compatibilidad con quien ya lo consumía.
+        "schema_version": "1.0.0",
+        "herramienta": "hal",
+        "version": __version__,
         "ok": gcc is not None,
-        "herramientas": {
-            "gcc": {"presente": gcc is not None, "ruta": gcc, "requerido": True},
-            "gdb": {"presente": gdb is not None, "ruta": gdb, "requerido": False},
-            "valgrind": {"presente": valgrind is not None, "ruta": valgrind, "requerido": False},
-            "addr2line": {"presente": addr2line is not None, "ruta": addr2line, "requerido": False},
-        },
+        "chequeos": [
+            {"nombre": nombre, "requerido": info["requerido"], "ok": info["presente"],
+             "detalle": info["ruta"] or "No encontrado en $PATH"}
+            for nombre, info in herramientas.items()
+        ],
+        "herramientas": herramientas,
     }
 
 

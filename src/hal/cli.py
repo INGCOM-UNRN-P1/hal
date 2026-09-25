@@ -28,6 +28,7 @@ console = Console()
 err_console = Console(stderr=True)
 
 app = typer.Typer(
+    context_settings={"help_option_names": ["-h", "--help"]},
     name="hal",
     help="🤖 HAL — Asistente forense de core dumps y análisis pedagógico post-mortem de segfaults en C.",
     add_completion=True,
