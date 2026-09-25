@@ -42,13 +42,13 @@ Issues = "https://github.com/INGCOM-UNRN-P1/hal/issues"
 [project.scripts]
 hal = "hal.cli:main"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/hal"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+]
