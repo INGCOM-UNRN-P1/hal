@@ -20,7 +20,7 @@ jobs:
       - name: Instalar dependencias C del sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc valgrind bubblewrap
+          sudo apt-get install -y gcc gdb valgrind bubblewrap
 
       - name: Instalar uv
         uses: astral-sh/setup-uv@v5
