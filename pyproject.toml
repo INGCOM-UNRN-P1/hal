@@ -34,6 +34,15 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+# Herramientas del ecosistema que se usan como biblioteca (N-ECO-01). Referencias git fijadas
+# a commits publicados; sin el extra se usa el camino propio (gcc, sin sandbox de nostromo…).
+ecosistema = [
+    "vasquez @ git+https://github.com/INGCOM-UNRN-P1/vasquez@ad8ef5c7d2a4c05c2ca618c7afbcb9cfd7749ac3",
+    "daedalus @ git+https://github.com/INGCOM-UNRN-P1/daedalus@cd3eb998193cd5bd9ea881aa9a0e19f5fe6d9a86",
+    "nostromo @ git+https://github.com/INGCOM-UNRN-P1/nostromo@803726033d31d6a1b5e64545bb6a15c6cbe21d0a",
+]
+
 [project.urls]
 Homepage = "https://github.com/INGCOM-UNRN-P1/hal"
 Repository = "https://github.com/INGCOM-UNRN-P1/hal.git"
@@ -52,3 +61,7 @@ pythonpath = ["src"]
 dev = [
     "pytest>=7.4.0",
 ]
+
+[tool.hatch.metadata]
+# Las dependencias del ecosistema son referencias directas a git (nunca por nombre en PyPI).
+allow-direct-references = true

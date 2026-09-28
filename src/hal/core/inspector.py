@@ -108,25 +108,14 @@ def parsear_struct_gdb(texto: str) -> Dict[str, Any]:
 
 def obtener_libreria_vasquez() -> Optional[Path]:
     """Localiza o compila dinámicamente la biblioteca inyectora libvasquez_inject.so."""
-    # 1. Intentar importar vasquez si está disponible
+    # 1. vasquez instalado (extra `ecosistema`)
     try:
         from vasquez.core.cache import get_cached_injector_library
         return get_cached_injector_library()
     except Exception:
         pass
 
-    # 2. Intentar agregar repositorio vasquez hermano en sys.path relativo
-    try:
-        # Resolver relativo al archivo actual dentro del monorepo / subdirectorios
-        hermano_vasquez = Path(__file__).resolve().parents[4] / "vasquez" / "src"
-        if hermano_vasquez.exists() and str(hermano_vasquez) not in sys.path:
-            sys.path.insert(0, str(hermano_vasquez))
-            from vasquez.core.cache import get_cached_injector_library
-            return get_cached_injector_library()
-    except Exception:
-        pass
-
-    # 3. Buscar en el directorio de caché de usuario ~/.cache/vasquez/
+    # 2. Buscar en el directorio de caché de usuario ~/.cache/vasquez/
     cache_dir = Path.home() / ".cache" / "vasquez"
     if cache_dir.exists():
         so_files = sorted(cache_dir.glob("libvasquez_inject_*.so"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -143,43 +132,21 @@ def _compilar_con_daedalus(
 ) -> Optional[Tuple[bool, Optional[Path], str]]:
     try:
         from daedalus.core.compiler import compilar_archivos
-        flags = ["-g", "-O0"]
-        if flags_adicionales:
-            flags.extend(flags_adicionales)
-        res = compilar_archivos([archivo_c], binario_salida=binario_out, flags_adicionales=flags)
-        return res.exito, (binario_out if res.exito else None), res.stderr_crudo
     except ImportError:
-        import sys
-        sibling = Path(__file__).resolve().parents[4] / "daedalus" / "src"
-        if sibling.is_dir() and str(sibling) not in sys.path:
-            sys.path.insert(0, str(sibling))
-            try:
-                from daedalus.core.compiler import compilar_archivos
-                flags = ["-g", "-O0"]
-                if flags_adicionales:
-                    flags.extend(flags_adicionales)
-                res = compilar_archivos([archivo_c], binario_salida=binario_out, flags_adicionales=flags)
-                return res.exito, (binario_out if res.exito else None), res.stderr_crudo
-            except ImportError:
-                return None
-        return None
+        return None  # sin el extra `ecosistema` se usa el camino propio
+    flags = ["-g", "-O0"]
+    if flags_adicionales:
+        flags.extend(flags_adicionales)
+    res = compilar_archivos([archivo_c], binario_salida=binario_out, flags_adicionales=flags)
+    return res.exito, (binario_out if res.exito else None), res.stderr_crudo
 
 
 def _try_import_nostromo():
     try:
         from nostromo.core.sandbox import ejecutar_aislado
-        return ejecutar_aislado
     except ImportError:
-        import sys
-        sibling = Path(__file__).resolve().parents[4] / "nostromo" / "src"
-        if sibling.is_dir() and str(sibling) not in sys.path:
-            sys.path.insert(0, str(sibling))
-            try:
-                from nostromo.core.sandbox import ejecutar_aislado
-                return ejecutar_aislado
-            except ImportError:
-                return None
-        return None
+        return None  # sin el extra `ecosistema` se usa el camino propio
+    return ejecutar_aislado
 
 
 def compilar_codigo_c(
