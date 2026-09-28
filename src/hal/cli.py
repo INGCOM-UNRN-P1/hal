@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -462,6 +463,34 @@ def doctor_cmd(
         raise typer.Exit(code=1)
 
 
+def script_reproductor(objetivo: Path, stdin: Optional[str] = None, args: Optional[str] = None) -> str:
+    """Script Bash que reproduce el crash (N-HAL-02).
+
+    El binario se compila en un directorio propio creado con mktemp (no en una ruta fija
+    de /tmp que otro usuario podría ocupar) y se borra al salir; la ruta, la entrada y los
+    argumentos van citados para el shell.
+    """
+    argumentos = " ".join(shlex.quote(a) for a in shlex.split(args or ""))
+    entrada = f"printf '%s\\n' {shlex.quote(stdin)} | " if stdin else ""
+    ruta = shlex.quote(str(objetivo.resolve()))
+    encabezado = "#!/usr/bin/env bash\n# Script autónomo de reproducción generado por HAL\nset -euo pipefail\n"
+    if objetivo.suffix == ".c":
+        return (
+            encabezado
+            + 'DIR="$(mktemp -d)"\n'
+            + "trap 'rm -rf \"$DIR\"' EXIT\n"
+            + f"echo {shlex.quote(f'Compilando {objetivo.name} con símbolos de depuración y AddressSanitizer...')}\n"
+            + f'gcc -std=c11 -Wall -Wextra -g -O0 -fsanitize=address,undefined {ruta} -o "$DIR/crash_app"\n'
+            + 'echo "Ejecutando binario..."\n'
+            + f'{entrada}"$DIR/crash_app" {argumentos}\n'
+        )
+    return (
+        encabezado
+        + f"echo {shlex.quote(f'Ejecutando binario {objetivo.name}...')}\n"
+        + f"{entrada}{ruta} {argumentos}\n"
+    )
+
+
 @app.command("generate-reproducer")
 def generate_reproducer_cmd(
     objetivo: Path = typer.Argument(..., help="Archivo .c o binario que produce el crash."),
@@ -472,25 +501,10 @@ def generate_reproducer_cmd(
 ) -> None:
     """Genera un script autónomo en Bash para reproducir exactamente el crash en cualquier máquina."""
     is_c = objetivo.suffix == ".c"
-    arg_str = args or ""
-    stdin_str = f"echo '{stdin}' | " if stdin else ""
-
-    if is_c:
-        script = f"""#!/usr/bin/env bash
-# Script autónomo de reproducción generado por HAL
-set -euo pipefail
-echo "Compilando {objetivo.name} con símbolos de depuración y AddressSanitizer..."
-gcc -std=c11 -Wall -Wextra -g -O0 -fsanitize=address,undefined "{objetivo.resolve()}" -o /tmp/crash_app
-echo "Ejecutando binario..."
-{stdin_str}/tmp/crash_app {arg_str}
-"""
-    else:
-        script = f"""#!/usr/bin/env bash
-# Script autónomo de reproducción generado por HAL
-set -euo pipefail
-echo "Ejecutando binario {objetivo.name}..."
-{stdin_str}"{objetivo.resolve()}" {arg_str}
-"""
+    try:
+        script = script_reproductor(objetivo, stdin, args)
+    except ValueError as error:
+        raise typer.BadParameter(f"--args mal formado: {error}.", param_hint="--args") from None
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(script, encoding="utf-8")
