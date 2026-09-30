@@ -121,3 +121,41 @@ hal parse-valgrind valgrind.log
 # Consultar consejos pedagógicos didácticos
 hal advice --json
 ```
+
+<!-- p1:referencia:inicio — generado por p1-tools/scripts/readme_generado.py: no editar a mano -->
+
+## Referencia rápida
+
+### Requisitos
+
+- Python ≥ 3.11 y [uv](https://docs.astral.sh/uv/getting-started/installation/).
+- Programas del sistema: `gcc`, `gdb`, `valgrind`.
+
+| Sistema | `gcc` | `gdb` | `valgrind` |
+|:--|:--|:--|:--|
+| Debian / Ubuntu | `sudo apt install gcc` | `sudo apt install gdb` | `sudo apt install valgrind` |
+| Fedora | `sudo dnf install gcc` | `sudo dnf install gdb` | `sudo dnf install valgrind` |
+| Windows | incluido en el entorno de la cátedra (MSYS2 UCRT64) | incluido en el entorno de la cátedra (MSYS2 UCRT64) | no existe: usar WSL |
+| macOS | `xcode-select --install` (clang como `gcc`) | `brew install gdb` (en Apple Silicon no está: usar `lldb`) | no existe en Apple Silicon |
+
+### Comandos
+
+| Comando | Descripción |
+|:--|:--|
+| `hal check`, `hal run` | Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash. |
+| `hal report` | Genera directamente la sección de reporte Markdown de HAL para Dredd o exporta a HTML/Discussions. |
+| `hal inspect` | Inspecciona un binario compilado ante posibles fallos de ejecución. |
+| `hal inspect-struct`, `hal struct` | Inspecciona y vuelca los campos de una estructura (struct) en memoria (Mejora 22). |
+| `hal doctor` | Verifica el estado del entorno (GCC, GDB, Valgrind, addr2line). |
+| `hal generate-reproducer` | Genera un script autónomo en Bash para reproducir exactamente el crash en cualquier máquina. |
+| `hal replay` | Ejecuta y navega paso a paso la traza forense del crash con renderizado Rich. |
+| `hal registers` | Muestra los valores de los registros de CPU (RAX, RSP, RIP, etc.) capturados durante el crash. |
+| `hal check-fds` | Audita aperturas de archivos y descriptores huérfanos sin cerrar. |
+| `hal inspect-globals` | Inspecciona las variables globales y estáticas (.data y .bss) en la memoria del binario. |
+| `hal resolve-addr` | Traduce una dirección de memoria hexadecimal a archivo, línea y nombre de función. |
+| `hal parse-valgrind`, `hal valgrind` | Parsea reportes de Valgrind Memcheck y traduce violaciones a explicaciones pedagógicas. |
+| `hal advice` | Muestra consejos pedagógicos y buenas prácticas defensivas para evitar segfaults. |
+
+Ayuda de cada comando: `hal <comando> -h`.
+
+<!-- p1:referencia:fin -->
