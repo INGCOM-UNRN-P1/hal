@@ -4,6 +4,7 @@ import shutil
 import subprocess
 
 import pytest
+from rich.text import Text
 from typer.testing import CliRunner
 
 from hal.cli import app, script_reproductor
@@ -59,9 +60,11 @@ def test_el_script_reproduce_con_entrada_y_argumentos_citados(tmp_path):
 def test_args_mal_formado_es_error_de_uso(tmp_path):
     fuente = tmp_path / "app.c"
     fuente.write_text(PROGRAMA)
-    res = runner.invoke(app, ["generate-reproducer", str(fuente), "-o", str(tmp_path / "r.sh"), "--args", "'sin cerrar"])
+    res = runner.invoke(app, ["generate-reproducer", str(fuente), "-o", str(tmp_path / "r.sh"), "--args", "'sin cerrar"],
+                        env={"COLUMNS": "200"})
     assert res.exit_code == 2
-    assert "--args" in res.output
+    # Texto plano: en GitHub Actions, Typer resalta la salida con códigos ANSI que parten «--args».
+    assert "--args" in Text.from_ansi(res.output).plain
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="requiere gcc")
