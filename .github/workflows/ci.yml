@@ -39,6 +39,45 @@ jobs:
       - name: Ejecutar suite de pruebas
         run: uv run pytest -q
 
+  test-windows:
+    name: Test Windows (MSYS2 UCRT64)
+    runs-on: windows-2025
+    # Los estudiantes usan Windows (entorno: MSYS2 UCRT64). Informativo hasta que la suite pase
+    # ahí: después se quita continue-on-error (N-ECO-10).
+    continue-on-error: true
+    env:
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar el toolchain de UCRT64 (el mismo del entorno de la cátedra)
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gdb
+
+      - name: Exponer las herramientas de UCRT64 en el PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value "${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin"
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sincronizar dependencias
+        run: uv sync --all-extras
+
+      - name: Diagnóstico del entorno
+        run: uv run hal doctor
+        continue-on-error: true
+
+      - name: Ejecutar suite de pruebas
+        run: uv run pytest -q
+
   calidad:
     name: Errores de Python y dependencias vulnerables
     runs-on: ubuntu-24.04
