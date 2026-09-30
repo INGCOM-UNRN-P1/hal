@@ -69,7 +69,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0.0" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "vasquez", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/vasquez?rev=ad8ef5c7d2a4c05c2ca618c7afbcb9cfd7749ac3" },
-    { name = "yutani", git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=e4c8e1050e5dd87a930c5404aba6b65d1be1665a" },
+    { name = "yutani", git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=4b99a428c28ab5f3c3013b770b9692ade6182fc2" },
 ]
 provides-extras = ["ecosistema"]
 
@@ -402,7 +402,7 @@ dependencies = [
 [[package]]
 name = "yutani"
 version = "0.1.0"
-source = { git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=e4c8e1050e5dd87a930c5404aba6b65d1be1665a#e4c8e1050e5dd87a930c5404aba6b65d1be1665a" }
+source = { git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=4b99a428c28ab5f3c3013b770b9692ade6182fc2#4b99a428c28ab5f3c3013b770b9692ade6182fc2" }
 dependencies = [
     { name = "rich" },
     { name = "typer" },
