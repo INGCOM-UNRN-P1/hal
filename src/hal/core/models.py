@@ -70,6 +70,7 @@ class DiagnosticoCrash:
     es_wild_pointer: bool = False
     es_assert_fallido: bool = False
     expresion_assert: Optional[str] = None
+    pista: bool = False  # modo pista: sin línea, valores ni corrección (ver core/pista.py)
 
     def to_dict(self) -> Dict[str, Any]:
         ruta_rel = _normalizar_ruta_relativa(self.archivo_falla)
@@ -102,4 +103,5 @@ class DiagnosticoCrash:
             "es_wild_pointer": self.es_wild_pointer,
             "es_assert_fallido": self.es_assert_fallido,
             "expresion_assert": self.expresion_assert,
+            **({"pista": True} if self.pista else {}),
         }

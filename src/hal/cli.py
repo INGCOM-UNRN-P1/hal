@@ -23,6 +23,7 @@ from hal.core.exporter import exportar_discussion_markdown, exportar_html
 from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.inspector import inspeccionar_fuente_o_binario, resolver_binario
 from hal.core.models import DiagnosticoCrash
+from hal.core.pista import diagnostico_en_pista, pista_activa
 from hal.core.symbols import desofuscar_direccion, inspeccionar_variables_globales
 from hal.core.valgrind_parser import parsear_log_valgrind
 
@@ -88,6 +89,8 @@ def _renderizar_diagnostico_rich(
     )
     if diag.archivo_falla and diag.linea_falla:
         header += f"\n📍 [bold]Ubicación:[/bold] [yellow]{diag.archivo_falla}:{diag.linea_falla}[/yellow] (en función [cyan]{diag.funcion_falla or 'main'}[/cyan])"
+    elif diag.archivo_falla and diag.pista:
+        header += f"\n📍 [bold]Ubicación:[/bold] [yellow]{diag.archivo_falla}[/yellow], en la función [cyan]{diag.funcion_falla or 'main'}()[/cyan]"
 
     console.print(Panel(header, title="🚨 Diagnóstico Forense de HAL", border_style="red"))
 
@@ -190,11 +193,15 @@ def _renderizar_diagnostico_rich(
         ))
 
     # Acción Correctiva
-    console.print(Panel(
-        f"[bold green]💡 ¿Cómo solucionarlo?[/bold green]\n\n{diag.accion_correctiva}",
-        title="🛠️ Acción Correctiva Sugerida",
-        border_style="green",
-    ))
+    if diag.accion_correctiva:
+        console.print(Panel(
+            f"[bold green]💡 ¿Cómo solucionarlo?[/bold green]\n\n{diag.accion_correctiva}",
+            title="🛠️ Acción Correctiva Sugerida",
+            border_style="green",
+        ))
+    if diag.pista:
+        console.print("[dim]Modo pista: buscá la falla en la función indicada; la línea, los valores y la corrección "
+                      "no se muestran.[/dim]")
 
     if mostrar_consejos:
         console.print("\n[bold cyan]🎓 Consejos Didácticos de Programación Defensiva:[/bold cyan]")
@@ -225,7 +232,8 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
         lines.append(f"> [!CAUTION]\n> **Fallo Fatal:** {diag.explicacion}\n")
         if diag.vasquez_inyeccion_detectada:
             lines.append(f"> [!WARNING]\n> **Inyección Activa de Fallos (Vasquez):** {diag.vasquez_inyeccion_detectada.get('detalle', 'Inyección LD_PRELOAD')}\n")
-        lines.append(f"**Sugerencia de corrección:** {diag.accion_correctiva}\n")
+        if diag.accion_correctiva:
+            lines.append(f"**Sugerencia de corrección:** {diag.accion_correctiva}\n")
         if diag.campos_struct:
             lines.append(f"### Inspección de Estructura (`{diag.struct_nombre or 'struct'}`)")
             lines.append("| Campo | Tipo | Valor |")
@@ -275,6 +283,7 @@ def run_cmd(
     html_output: Optional[Path] = typer.Option(None, "--html", help="Ruta para exportar el reporte interactivo en HTML."),
     discussion_md: Optional[Path] = typer.Option(None, "--discussion-md", help="Ruta para exportar plantilla Markdown para GitHub Discussions."),
     all_frames: bool = typer.Option(False, "--all-frames", help="Mostrar marcos de pila de libc/sistema completos."),
+    pista: bool = typer.Option(False, "--pista", help="Modo pista (o P1_PISTA=1): la falla y la función, sin la línea, los valores ni la corrección."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -290,6 +299,8 @@ def run_cmd(
         vasquez_cascade=vasquez_cascade,
         vasquez_garbage_memory=vasquez_garbage,
     )
+    if pista_activa(pista):
+        diag = diagnostico_en_pista(diag)
 
     if html_output:
         html_code = exportar_html(diag)

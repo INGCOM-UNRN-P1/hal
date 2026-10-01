@@ -15,6 +15,7 @@
 - Análisis de volcados de memoria (core dumps) y extracción automatizada de trazas de ejecución (backtraces) mediante GDB en modo batch.
 - Identificación de variables locales comprometidas, punteros desreferenciados y ubicación exacta de la instrucción culpable.
 - Traducción del diagnóstico técnico a explicaciones didácticas en español rioplatense.
+- Modo pista para evaluaciones (`check --pista` o `P1_PISTA=1`, que ripley exporta con `[general] pistas = true`): la señal, la causa y la función donde ocurrió, sin la línea, la variable culpable, los valores de la pila ni la corrección.
 
 ### Límites de Responsabilidad y Delegación (Qué no cubre)
 - Auditoría preventiva de seguridad en código fuente estático (delegado a `kaneda`).
@@ -99,6 +100,7 @@ Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagó
 | `--html` | `Optional[Path]` | `None` | Ruta para exportar el reporte interactivo en HTML. |
 | `--discussion-md` | `Optional[Path]` | `None` | Ruta para exportar plantilla Markdown para GitHub Discussions. |
 | `--all-frames` | `bool` | `False` | Mostrar marcos de pila de libc/sistema completos. |
+| `--pista` | `bool` | `False` | Modo pista (o `P1_PISTA=1`): la falla y la función, sin la línea, los valores ni la corrección. |
 
 #### Ejemplo de Invocación
 ```bash
@@ -133,6 +135,7 @@ Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagó
 | `--html` | `Optional[Path]` | `None` | Ruta para exportar el reporte interactivo en HTML. |
 | `--discussion-md` | `Optional[Path]` | `None` | Ruta para exportar plantilla Markdown para GitHub Discussions. |
 | `--all-frames` | `bool` | `False` | Mostrar marcos de pila de libc/sistema completos. |
+| `--pista` | `bool` | `False` | Modo pista (o `P1_PISTA=1`): la falla y la función, sin la línea, los valores ni la corrección. |
 
 #### Ejemplo de Invocación
 ```bash
