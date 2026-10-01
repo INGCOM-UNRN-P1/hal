@@ -14,6 +14,18 @@ from typing import Any, Dict, List, Optional, Tuple
 from hal.core.explainer import diagnosticar_crash
 from hal.core.models import DiagnosticoCrash, StackFrame
 
+ES_WINDOWS = os.name == "nt"
+
+
+def resolver_binario(ruta: Path) -> Path:
+    """En Windows, `gcc -o prog` escribe `prog.exe` y la terminal de MSYS2 acepta `./prog`: si `prog` no
+    existe y `prog.exe` sí, se usa ese (N-ECO-10)."""
+    if ES_WINDOWS and not ruta.exists():
+        con_exe = ruta.with_name(ruta.name + ".exe")
+        if con_exe.is_file():
+            return con_exe
+    return ruta
+
 
 def parsear_struct_gdb(texto: str) -> Dict[str, Any]:
     """Parsea la representación de un struct emitida por GDB (print *var, print var o info locals).
@@ -158,7 +170,8 @@ def compilar_codigo_c(
     if not archivo_c.is_file():
         return False, None, f"El archivo '{archivo_c}' no existe."
 
-    binario_out = directorio_destino / archivo_c.stem
+    # En Windows gcc agrega .exe al binario: se devuelve la ruta que existe (N-ECO-10).
+    binario_out = directorio_destino / (archivo_c.stem + (".exe" if ES_WINDOWS else ""))
 
     daed_res = _compilar_con_daedalus(archivo_c, binario_out, flags_adicionales)
     if daed_res is not None:

@@ -21,12 +21,22 @@ from hal.core.advice import obtener_consejos
 from hal.core.doctor import ejecutar_diagnostico_doctor, obtener_estado_doctor
 from hal.core.exporter import exportar_discussion_markdown, exportar_html
 from hal.core.fd_audit import auditar_descriptores_archivo
-from hal.core.inspector import inspeccionar_fuente_o_binario
+from hal.core.inspector import inspeccionar_fuente_o_binario, resolver_binario
 from hal.core.models import DiagnosticoCrash
 from hal.core.symbols import desofuscar_direccion, inspeccionar_variables_globales
 from hal.core.valgrind_parser import parsear_log_valgrind
 
 console = Console()
+
+
+def _existente(valor: Optional[Path]) -> Optional[Path]:
+    """Como exists=True, pero en Windows acepta `prog` cuando existe `prog.exe` (N-ECO-10)."""
+    if valor is None:
+        return valor
+    valor = resolver_binario(valor)
+    if not valor.exists():
+        raise typer.BadParameter(f"No existe '{valor}'.")
+    return valor
 err_console = Console(stderr=True)
 
 # Contrato de línea de comandos del ecosistema (-h/--help, --version/-v, errores de datos como
@@ -248,7 +258,7 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
 @app.command("run")
 @app.command("check")
 def run_cmd(
-    objetivo: Path = typer.Argument(..., exists=True, help="Ruta al archivo C (.c) o binario a ejecutar y diagnosticar."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Ruta al archivo C (.c) o binario a ejecutar y diagnosticar."),
     args: Optional[List[str]] = typer.Argument(None, help="Argumentos a pasar al programa."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Cadena de texto para enviar a la entrada estándar (stdin)."),
     json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico estructurado en formato JSON."),
@@ -317,7 +327,7 @@ def run_cmd(
 
 @app.command("report")
 def report_cmd(
-    objetivo: Path = typer.Argument(..., exists=True, help="Ruta al archivo C (.c) o binario a diagnosticar."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Ruta al archivo C (.c) o binario a diagnosticar."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Ruta de destino del archivo Markdown."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
     html_output: Optional[Path] = typer.Option(None, "--html", help="Ruta para exportar el reporte interactivo en HTML."),
@@ -361,7 +371,7 @@ def report_cmd(
 
 @app.command("inspect")
 def inspect_cmd(
-    binario: Path = typer.Argument(..., exists=True, help="Binario ejecutable a inspeccionar."),
+    binario: Path = typer.Argument(..., callback=_existente, help="Binario ejecutable a inspeccionar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir diagnóstico en formato JSON."),
     gdb_path: Optional[str] = typer.Option(None, "--gdb", help="Ruta a GDB."),
     output_md: Optional[Path] = typer.Option(None, "--md", "--output-md", help="Generar sección de reporte en Markdown."),
@@ -404,7 +414,7 @@ def inspect_cmd(
 @app.command("struct")
 @app.command("inspect-struct")
 def inspect_struct_cmd(
-    objetivo: Path = typer.Argument(..., exists=True, help="Archivo .c o binario a ejecutar e inspeccionar."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo .c o binario a ejecutar e inspeccionar."),
     struct_nombre: str = typer.Argument(..., help="Nombre de la variable struct o puntero a struct."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir salida en formato JSON."),
@@ -487,7 +497,7 @@ def script_reproductor(objetivo: Path, stdin: Optional[str] = None, args: Option
 
 @app.command("generate-reproducer")
 def generate_reproducer_cmd(
-    objetivo: Path = typer.Argument(..., exists=True, help="Archivo .c o binario que produce el crash."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo .c o binario que produce el crash."),
     output: Path = typer.Option(Path("reproducer.sh"), "--output", "-o", help="Ruta de destino del script bash."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
     args: Optional[str] = typer.Option(None, "--args", "-a", help="Argumentos de línea de comando."),
@@ -520,7 +530,7 @@ def generate_reproducer_cmd(
 
 @app.command("replay")
 def replay_cmd(
-    objetivo: Path = typer.Argument(..., exists=True, help="Archivo .c o binario a re-ejecutar en modo diagnóstico."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo .c o binario a re-ejecutar en modo diagnóstico."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir resultado del replay en formato JSON."),
 ) -> None:
@@ -541,7 +551,7 @@ def replay_cmd(
 
 @app.command("registers")
 def registers_cmd(
-    objetivo: Path = typer.Argument(..., exists=True, help="Archivo .c o binario a inspeccionar."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo .c o binario a inspeccionar."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir registros en JSON."),
 ) -> None:
@@ -598,7 +608,7 @@ def check_fds_cmd(
 
 @app.command("inspect-globals")
 def inspect_globals_cmd(
-    binario: Path = typer.Argument(..., exists=True, help="Binario a inspeccionar."),
+    binario: Path = typer.Argument(..., callback=_existente, help="Binario a inspeccionar."),
     json_output: bool = typer.Option(False, "--json", help="Salida en JSON."),
 ) -> None:
     """Inspecciona las variables globales y estáticas (.data y .bss) en la memoria del binario."""
@@ -625,7 +635,7 @@ def inspect_globals_cmd(
 
 @app.command("resolve-addr")
 def resolve_addr_cmd(
-    binario: Path = typer.Argument(..., exists=True, help="Binario ejecutable con símbolos."),
+    binario: Path = typer.Argument(..., callback=_existente, help="Binario ejecutable con símbolos."),
     direccion: str = typer.Argument(..., help="Dirección hexadecimal a desofuscar (ej: 0x555555555169)."),
     json_output: bool = typer.Option(False, "--json", help="Salida en JSON."),
 ) -> None:
