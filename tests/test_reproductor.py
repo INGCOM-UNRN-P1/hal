@@ -1,5 +1,6 @@
 """Script reproductor sin ruta fija en /tmp y con citas correctas para el shell (N-HAL-02)."""
 
+import os
 import shutil
 import subprocess
 
@@ -68,6 +69,9 @@ def test_args_mal_formado_es_error_de_uso(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="requiere gcc")
+# El reproductor es un script de bash para Linux: en el runner de Windows `bash` es el de WSL (sin
+# distribución instalada) y gcc escribe app.exe.
+@pytest.mark.skipif(os.name == "nt", reason="el reproductor es un script de bash para Linux")
 def test_el_script_de_un_binario_cita_ruta_entrada_y_argumentos(tmp_path):
     carpeta = tmp_path / "con espacios $HOME"
     carpeta.mkdir()

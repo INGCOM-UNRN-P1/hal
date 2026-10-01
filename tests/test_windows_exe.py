@@ -6,6 +6,7 @@ sin .exe (inexistente) y sus comandos rechazaban `prog` con un error de uso.
 
 from __future__ import annotations
 
+import os
 import shutil
 
 import pytest
@@ -29,7 +30,8 @@ def test_acepta_el_binario_sin_exe_solo_en_windows(tmp_path, monkeypatch):
 def test_compilar_devuelve_un_binario_que_existe(tmp_path, monkeypatch):
     fuente = tmp_path / "ok.c"
     fuente.write_text("int main(void) { return 0; }\n")
-    for windows in (False, True):
+    # En Linux se simulan las dos plataformas; en Windows de verdad, gcc siempre agrega .exe.
+    for windows in (True,) if os.name == "nt" else (False, True):
         monkeypatch.setattr(inspector, "ES_WINDOWS", windows)
         ok, binario, _ = compilar_codigo_c(fuente, tmp_path)
         assert ok and binario.is_file()
