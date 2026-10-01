@@ -100,3 +100,16 @@ def test_crash_json_schema_version_and_compatibility():
     assert data["archivo"] == "app.c"
     assert data["linea"] == 42
 
+
+
+def test_parsea_marcos_de_gdb_con_rutas_de_windows():
+    # gdb de MSYS2 informa la ruta con la unidad: antes el archivo y la línea quedaban vacíos (N-ECO-22).
+    salida = ("===GDB_BACKTRACE===\n"
+              "#0  0x00007ff6a1b21456 in invertir_vector (vec=0x0, n=5) at C:/Users/alumno/tp/main.c:15\n"
+              "#1  0x00007ff6a1b214c2 in main () at C:/Users/alumno/tp/main.c:27\n"
+              "===GDB_LOCALS===\n")
+    diag = parsear_salida_gdb(salida)
+    assert [(f.funcion, f.archivo, f.linea) for f in diag.frames[:2]] == [
+        ("invertir_vector", "C:/Users/alumno/tp/main.c", 15),
+        ("main", "C:/Users/alumno/tp/main.c", 27),
+    ]

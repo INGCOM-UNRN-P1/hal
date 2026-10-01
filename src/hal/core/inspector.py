@@ -339,7 +339,8 @@ def parsear_salida_gdb(
     else:
         bt_section = gdb_stdout
 
-    frame_re = re.compile(r"^#(\d+)\s+(?:0x[0-9a-fA-F]+\s+in\s+)?([a-zA-Z0-9_<>]+)\s*\((.*?)\)(?:\s+at\s+([^:]+):(\d+))?", re.MULTILINE)
+    # La ruta puede llevar la unidad (gdb de MSYS2: «at C:/Users/…/tp.c:12»), N-ECO-22.
+    frame_re = re.compile(r"^#(\d+)\s+(?:0x[0-9a-fA-F]+\s+in\s+)?([a-zA-Z0-9_<>]+)\s*\((.*?)\)(?:\s+at\s+((?:[A-Za-z]:)?[^:]+):(\d+))?", re.MULTILINE)
     matches = list(frame_re.finditer(bt_section))
 
     for i, match in enumerate(matches):
