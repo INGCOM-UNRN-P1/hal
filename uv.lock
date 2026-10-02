@@ -31,11 +31,12 @@ wheels = [
 
 [[package]]
 name = "daedalus"
-version = "0.1.0"
-source = { git = "https://github.com/INGCOM-UNRN-P1/daedalus?rev=cd3eb998193cd5bd9ea881aa9a0e19f5fe6d9a86#cd3eb998193cd5bd9ea881aa9a0e19f5fe6d9a86" }
+version = "0.2.0"
+source = { git = "https://github.com/INGCOM-UNRN-P1/daedalus?rev=9cefe644353851858f2e77b7936ed34ae1c510ea#9cefe644353851858f2e77b7936ed34ae1c510ea" }
 dependencies = [
     { name = "rich" },
     { name = "typer" },
+    { name = "yutani" },
 ]
 
 [[package]]
@@ -63,13 +64,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "daedalus", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/daedalus?rev=cd3eb998193cd5bd9ea881aa9a0e19f5fe6d9a86" },
-    { name = "nostromo", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/nostromo?rev=6469841e133c0ef63ceffdfd9dabb440d7cbaf8c" },
+    { name = "daedalus", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/daedalus?rev=9cefe644353851858f2e77b7936ed34ae1c510ea" },
+    { name = "nostromo", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/nostromo?rev=ec62a77c6452750df644b78382e0ec6fb12a0f00" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "typer", specifier = ">=0.9.0" },
-    { name = "vasquez", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/vasquez?rev=ad8ef5c7d2a4c05c2ca618c7afbcb9cfd7749ac3" },
-    { name = "yutani", git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=4b99a428c28ab5f3c3013b770b9692ade6182fc2" },
+    { name = "vasquez", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/vasquez?rev=cf815547f0aa0098d9517939358769caaeceac6a" },
+    { name = "yutani", git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=31f79c904ac33065cc1c2b9fd34b4c513f0028d9" },
 ]
 provides-extras = ["ecosistema"]
 
@@ -109,7 +110,7 @@ wheels = [
 [[package]]
 name = "nostromo"
 version = "0.2.0"
-source = { git = "https://github.com/INGCOM-UNRN-P1/nostromo?rev=6469841e133c0ef63ceffdfd9dabb440d7cbaf8c#6469841e133c0ef63ceffdfd9dabb440d7cbaf8c" }
+source = { git = "https://github.com/INGCOM-UNRN-P1/nostromo?rev=ec62a77c6452750df644b78382e0ec6fb12a0f00#ec62a77c6452750df644b78382e0ec6fb12a0f00" }
 dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
@@ -392,18 +393,19 @@ wheels = [
 
 [[package]]
 name = "vasquez"
-version = "0.1.0"
-source = { git = "https://github.com/INGCOM-UNRN-P1/vasquez?rev=ad8ef5c7d2a4c05c2ca618c7afbcb9cfd7749ac3#ad8ef5c7d2a4c05c2ca618c7afbcb9cfd7749ac3" }
+version = "0.2.0"
+source = { git = "https://github.com/INGCOM-UNRN-P1/vasquez?rev=cf815547f0aa0098d9517939358769caaeceac6a#cf815547f0aa0098d9517939358769caaeceac6a" }
 dependencies = [
     { name = "pydantic" },
     { name = "rich" },
     { name = "typer" },
+    { name = "yutani" },
 ]
 
 [[package]]
 name = "yutani"
 version = "0.1.0"
-source = { git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=4b99a428c28ab5f3c3013b770b9692ade6182fc2#4b99a428c28ab5f3c3013b770b9692ade6182fc2" }
+source = { git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=31f79c904ac33065cc1c2b9fd34b4c513f0028d9#31f79c904ac33065cc1c2b9fd34b4c513f0028d9" }
 dependencies = [
     { name = "rich" },
     { name = "typer" },
