@@ -267,6 +267,7 @@ def _diagnosticar_sigsegv(
     salida_prog: str,
     texto_combinado: str,
     vasquez_info: Optional[dict],
+    profundidad_pila: Optional[int] = None,
 ) -> DiagnosticoCrash:
     es_null = (
         direccion in NIL_VALUES
@@ -286,8 +287,11 @@ def _diagnosticar_sigsegv(
         except ValueError:
             pass
 
-    if len(frames) > 30 and len(set(f.funcion for f in frames)) <= 3:
+    # La traza trae solo los primeros 30 marcos; la profundidad se cuenta aparte (hasta 5000).
+    pocas_funciones = bool(frames) and len(set(f.funcion for f in frames)) <= 3
+    if (profundidad_pila or len(frames)) >= 1000 or (len(frames) > 30 and pocas_funciones):
         fn_name = frames[0].funcion if frames else "recursiva"
+        cantidad = f"más de {profundidad_pila}" if (profundidad_pila or 0) >= 5000 else str(profundidad_pila or len(frames))
         return DiagnosticoCrash(
             tipo_senal="SIGSEGV",
             codigo_senal="STACK_OVERFLOW",
@@ -295,7 +299,7 @@ def _diagnosticar_sigsegv(
             causa_raiz_titulo="Desbordamiento de Pila (Stack Overflow por Recursión Infinita)",
             explicacion=(
                 f"Tu programa agotó el espacio de memoria reservado para la pila de ejecución (Stack).\n"
-                f"Se detectaron más de {len(frames)} llamadas recursivas anidadas a la función '{fn_name}'.\n"
+                f"Había {cantidad} llamadas recursivas anidadas en la pila, casi todas a la función '{fn_name}'.\n"
                 f"Esto ocurre cuando el caso base de la recursión falta, no se cumple nunca, o los parámetros no se acercan al caso base."
             ),
             accion_correctiva=(
@@ -504,11 +508,20 @@ def diagnosticar_crash(
     gdb_output: str = "",
     salida_prog: str = "",
     vasquez_injected: bool = False,
+    profundidad_pila: Optional[int] = None,
 ) -> DiagnosticoCrash:
     """Genera un diagnóstico pedagógico completo a partir de los datos crudos del fallo."""
     archivo, linea, funcion, var_culpable, frame_falla = _extraer_frame_y_variable_culpable(frames)
     texto_combinado = (gdb_output + "\n" + salida_prog).lower()
     vasquez_info = _detectar_inyeccion_vasquez(vasquez_injected, gdb_output, salida_prog, texto_combinado)
+
+    # 0. Recursión sin caso base: con miles de marcos la pila se desborda y gdb además informa
+    # «cannot access memory», que se confundía con un desborde de la dirección de retorno (QoL #474).
+    if (profundidad_pila or 0) >= 1000 and "SEGV" in senal:
+        diag = _diagnosticar_sigsegv(codigo_senal, direccion_memoria, archivo, linea, funcion, var_culpable, frames,
+                                     salida_prog, texto_combinado, vasquez_info, profundidad_pila)
+        _enriquecer_con_vasquez(diag)
+        return diag
 
     # 1. Use-After-Free (UAF)
     is_uaf = any(s in texto_combinado for s in (
@@ -562,7 +575,7 @@ def diagnosticar_crash(
 
     # 6. SIGSEGV
     if "SEGV" in senal or "SEGMENTATION" in senal.upper() or "SEGMENTATION" in (codigo_senal or "").upper():
-        diag = _diagnosticar_sigsegv(codigo_senal, direccion_memoria, archivo, linea, funcion, var_culpable, frames, salida_prog, texto_combinado, vasquez_info)
+        diag = _diagnosticar_sigsegv(codigo_senal, direccion_memoria, archivo, linea, funcion, var_culpable, frames, salida_prog, texto_combinado, vasquez_info, profundidad_pila)
         _enriquecer_con_vasquez(diag)
         return diag
 
@@ -610,3 +623,56 @@ def _enriquecer_con_vasquez(diag: DiagnosticoCrash) -> None:
     )
     if "VASQUEZ" not in diag.explicacion:
         diag.explicacion += nota
+
+
+_RE_RETORNO_LOCAL = re.compile(
+    r"In function [‘'`](?P<fn>\w+)[’'`].*?(?P<lin>\d+):\d+: warning: function returns address of local variable",
+    re.DOTALL,
+)
+
+
+def diagnosticar_puntero_a_local(diag: DiagnosticoCrash, advertencias: str) -> DiagnosticoCrash:
+    """Si el compilador avisó que una función devuelve la dirección de una variable local, el crash
+    casi seguro viene de ahí: esa variable dejó de existir al terminar la función (QoL #472). Sin
+    esta pista el estudiante veía un «acceso a una dirección inválida» genérico."""
+    if "returns address of local variable" not in (advertencias or ""):
+        return diag
+    m = _RE_RETORNO_LOCAL.search(advertencias)
+    fn = m.group("fn") if m else "la función"
+    linea_ret = f" (línea {m.group('lin')})" if m else ""
+    diag.codigo_senal = "DANGLING_STACK"
+    diag.causa_raiz_titulo = "Puntero a una variable local que ya no existe (dangling pointer)"
+    diag.explicacion = (
+        f"La función '{fn}' devuelve la dirección de una de sus variables locales{linea_ret}.\n"
+        "Las variables locales viven en el marco de pila de la función y desaparecen cuando la función "
+        "termina: el puntero devuelto apunta a memoria que ya no le pertenece al programa (el compilador "
+        "lo avisó con -Wreturn-local-addr). Usarlo después es comportamiento indefinido y acá terminó en "
+        f"{diag.tipo_senal}."
+    )
+    diag.accion_correctiva = (
+        "1. No devuelvas la dirección de una variable local.\n"
+        "2. Si el valor tiene que sobrevivir a la función, devolvelo por valor, recibí un puntero del "
+        "llamador donde escribirlo, o reservá memoria con malloc (y liberala después).\n"
+        "3. Compilá con -Wall y no ignores las advertencias: esta la detectaba el compilador."
+    )
+    return diag
+
+
+def diagnosticar_sin_terminar() -> DiagnosticoCrash:
+    """El programa no terminó en el tiempo límite: no es un crash, pero tampoco hay traza."""
+    return DiagnosticoCrash(
+        tipo_senal="TIMEOUT",
+        codigo_senal="SIN_TERMINAR",
+        direccion_memoria=None,
+        causa_raiz_titulo="El programa no terminó a tiempo (¿bucle infinito o espera de entrada?)",
+        explicacion=(
+            "El programa siguió corriendo hasta el tiempo límite sin recibir ninguna señal de error.\n"
+            "Las causas típicas son un lazo cuya condición nunca se vuelve falsa o un scanf/fgets que "
+            "espera datos por la entrada estándar."
+        ),
+        accion_correctiva=(
+            "1. Revisá que la variable de control de cada lazo cambie en cada vuelta.\n"
+            "2. Si el programa lee datos, pasáselos con --stdin o redirigiendo un archivo."
+        ),
+        es_crash=False,
+    )

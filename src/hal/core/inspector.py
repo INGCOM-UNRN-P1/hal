@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from hal.core.explainer import diagnosticar_crash
+from hal.core.explainer import diagnosticar_crash, diagnosticar_puntero_a_local, diagnosticar_sin_terminar
 from hal.core.models import DiagnosticoCrash, StackFrame
 
 ES_WINDOWS = os.name == "nt"
@@ -203,7 +203,7 @@ def compilar_codigo_c(
         )
         if res.returncode != 0:
             return False, None, res.stderr
-        return True, binario_out, ""
+        return True, binario_out, res.stderr  # advertencias: las usa el diagnóstico
     except subprocess.TimeoutExpired:
         return False, None, "La compilación excedió el tiempo límite (10s)."
     except Exception as e:
@@ -236,6 +236,20 @@ def ejecutar_con_gdb(
         if args_str:
             f.write(f"set args {args_str}\n")
         f.write("run\n")
+        # Profundidad de la pila con un tope: con una recursión infinita hay cientos de miles de
+        # marcos y `backtrace full` (o `bt -1`) tardaba más que el timeout.
+        f.write("echo ===GDB_PROFUNDIDAD===\n")
+        f.write("python\n")
+        f.write("try:\n")
+        f.write("    marco = gdb.newest_frame()\n")
+        f.write("    n = 0\n")
+        f.write("    while marco is not None and n < 5000:\n")
+        f.write("        n += 1\n")
+        f.write("        marco = marco.older()\n")
+        f.write("    print('PROFUNDIDAD=%d%s' % (n, '+' if marco is not None else ''))\n")
+        f.write("except Exception:\n")
+        f.write("    pass\n")
+        f.write("end\n")
         if struct_nombre:
             clean_s = struct_nombre.strip().lstrip("*")
             f.write("echo ===GDB_STRUCT_BEGIN===\n")
@@ -255,7 +269,7 @@ def ejecutar_con_gdb(
         f.write("echo ===GDB_INFO_PROGRAM===\n")
         f.write("info program\n")
         f.write("echo ===GDB_BACKTRACE===\n")
-        f.write("backtrace full\n")
+        f.write("backtrace full 30\n")
         f.write("echo ===GDB_LOCALS===\n")
         f.write("info locals\n")
         f.write("echo ===GDB_REGISTERS===\n")
@@ -273,14 +287,17 @@ def ejecutar_con_gdb(
         full_env = os.environ.copy()
         if env_vars:
             full_env.update(env_vars)
-        res = subprocess.run(
-            cmd,
-            input=stdin_data,
-            capture_output=True,
-            text=True,
-            timeout=timeout_segundos + 5,
-            env=full_env,
-        )
+        try:
+            res = subprocess.run(
+                cmd,
+                input=stdin_data,
+                capture_output=True,
+                text=True,
+                timeout=timeout_segundos + 5,
+                env=full_env,
+            )
+        except subprocess.TimeoutExpired:
+            return 124, "", "Tiempo de ejecución excedido (Timeout)."
         return res.returncode, res.stdout, res.stderr
     finally:
         if os.path.exists(gdb_script):
@@ -339,6 +356,9 @@ def parsear_salida_gdb(
     if m_sig:
         senal = m_sig.group(1).strip()
         codigo_senal = m_sig.group(2).strip()
+
+    m_prof = re.search(r"PROFUNDIDAD=(\d+)(\+?)", gdb_stdout)
+    profundidad = int(m_prof.group(1)) if m_prof else None
 
     m_addr = re.search(r"address (0x[0-9a-fA-F]+)", gdb_stdout) or re.search(r"at (0x[0-9a-fA-F]+)", gdb_stdout)
     if m_addr:
@@ -454,6 +474,7 @@ def parsear_salida_gdb(
         gdb_output=gdb_stdout + "\n" + gdb_stderr,
         salida_prog=salida_prog,
         vasquez_injected=vasquez_injected,
+        profundidad_pila=profundidad,
     )
     diag.registros = registros
     diag.campos_struct = campos_struct
@@ -526,6 +547,7 @@ def inspeccionar_fuente_o_binario(
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         binario = ruta_objetivo
+        err = ""
 
         # Si es código fuente .c, compilar
         if ruta_objetivo.suffix in (".c", ".cpp", ".cc"):
@@ -542,7 +564,8 @@ def inspeccionar_fuente_o_binario(
                 )
             binario = bin_comp
 
-        _, stdout, stderr = ejecutar_con_gdb(
+        advertencias = err if ruta_objetivo.suffix in (".c", ".cpp", ".cc") else ""
+        rc, stdout, stderr = ejecutar_con_gdb(
             binario,
             args=args,
             stdin_data=stdin_data,
@@ -550,12 +573,16 @@ def inspeccionar_fuente_o_binario(
             struct_nombre=struct_nombre,
             env_vars=env_vars if env_vars else None,
         )
+        if rc == 124 and not stdout:
+            return diagnosticar_sin_terminar()
         diagnostico = parsear_salida_gdb(
             stdout,
             stderr,
             struct_nombre=struct_nombre,
             vasquez_injected=vasquez_activo,
         )
+        if diagnostico.es_crash:
+            diagnostico = diagnosticar_puntero_a_local(diagnostico, advertencias)
 
         # Si compilamos el fuente, ajustar el nombre de archivo en los frames
         if ruta_objetivo.suffix in (".c", ".cpp", ".cc") and diagnostico.frames:
