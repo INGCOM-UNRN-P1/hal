@@ -104,4 +104,11 @@ class DiagnosticoCrash:
             "es_assert_fallido": self.es_assert_fallido,
             "expresion_assert": self.expresion_assert,
             **({"pista": True} if self.pista else {}),
+            # La forma común del ecosistema (yutani.hallazgos), para dredd y el apunte.
+            "hallazgos": _hallazgos(self),
         }
+
+
+def _hallazgos(diag: "DiagnosticoCrash") -> List[Dict[str, Any]]:
+    from hal.core.taxonomia import hallazgos  # import diferido: taxonomia importa este módulo
+    return hallazgos(diag)

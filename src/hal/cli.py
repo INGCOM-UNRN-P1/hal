@@ -284,6 +284,7 @@ def run_cmd(
     discussion_md: Optional[Path] = typer.Option(None, "--discussion-md", help="Ruta para exportar plantilla Markdown para GitHub Discussions."),
     all_frames: bool = typer.Option(False, "--all-frames", help="Mostrar marcos de pila de libc/sistema completos."),
     pista: bool = typer.Option(False, "--pista", help="Modo pista (o P1_PISTA=1): la falla y la función, sin la línea, los valores ni la corrección."),
+    gdb_script: Optional[Path] = typer.Option(None, "--gdb-script", help="Escribir un script de gdb que se detiene donde ocurrió el crash, para seguir depurando."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -301,6 +302,12 @@ def run_cmd(
     )
     if pista_activa(pista):
         diag = diagnostico_en_pista(diag)
+
+    if gdb_script:
+        from hal.core.gdb_script import generar_script_gdb
+        gdb_script.parent.mkdir(parents=True, exist_ok=True)
+        gdb_script.write_text(generar_script_gdb(diag, objetivo, args or []), encoding="utf-8")
+        err_console.print(f"[green]✓ Script de gdb en:[/green] [cyan]{gdb_script}[/cyan]")
 
     if html_output:
         html_code = exportar_html(diag)
@@ -700,6 +707,13 @@ def valgrind_cmd(
         console.print(f"[bold yellow]💧 Fugas de memoria detectadas: {res['fugas_bytes']} bytes sin liberar.[/bold yellow]")
 
     raise typer.Exit(code=1)
+
+
+@app.command("schema")
+def schema_cmd() -> None:
+    """Imprime el JSON Schema de la salida `--json` de check (crash v1)."""
+    from importlib.resources import files
+    print((files("hal") / "esquemas" / "crash-v1.schema.json").read_text(encoding="utf-8"))
 
 
 @app.command("advice")

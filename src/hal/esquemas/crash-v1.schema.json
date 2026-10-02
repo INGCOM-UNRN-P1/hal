@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/INGCOM-UNRN-P1/hal/esquemas/crash-v1.schema.json",
+  "title": "Diagnóstico de un crash (hal --json, schema_version 1.x)",
+  "description": "Salida de `hal check --json`. Los campos que no se conocen valen null. `hallazgos` tiene la forma común del ecosistema (yutani.hallazgos).",
+  "type": "object",
+  "required": ["schema_version", "es_crash", "tipo_senal", "codigo_senal", "causa_raiz_titulo", "explicacion",
+               "accion_correctiva", "archivo", "linea", "funcion_falla", "frames", "hallazgos"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^1\\."},
+    "es_crash": {"type": "boolean"},
+    "tipo_senal": {"type": "string", "description": "SIGSEGV, SIGABRT, SIGFPE, SIGBUS, TIMEOUT, NINGUNA…"},
+    "codigo_senal": {"type": ["string", "null"], "description": "SEGV_MAPERR, STACK_OVERFLOW, DANGLING_STACK, SIN_TERMINAR…"},
+    "direccion_memoria": {"type": ["string", "null"]},
+    "causa_raiz_titulo": {"type": "string"},
+    "explicacion": {"type": "string"},
+    "accion_correctiva": {"type": "string"},
+    "archivo": {"type": ["string", "null"]},
+    "linea": {"type": ["integer", "null"]},
+    "funcion_falla": {"type": ["string", "null"]},
+    "variable_culpable": {"type": ["string", "null"]},
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["nivel", "funcion"],
+        "properties": {
+          "nivel": {"type": "integer"},
+          "funcion": {"type": "string"},
+          "archivo": {"type": ["string", "null"]},
+          "linea": {"type": ["integer", "null"]},
+          "argumentos": {"type": "object"},
+          "variables_locales": {"type": "object"}
+        }
+      }
+    },
+    "hallazgos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "herramienta", "codigo", "categoria", "severidad", "mensaje"],
+        "properties": {
+          "id": {"type": "string"},
+          "categoria": {"type": "string"},
+          "severidad": {"enum": ["error", "advertencia", "estilo", "info"]},
+          "enlace": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "pista": {"type": "boolean"}
+  }
+}
