@@ -1,9 +1,7 @@
 """Tests unitarios para el motor de inspección y diagnóstico de HAL."""
 
-from pathlib import Path
-import pytest
 from hal.core.explainer import diagnosticar_crash
-from hal.core.inspector import compilar_codigo_c, parsear_salida_gdb, inspeccionar_fuente_o_binario
+from hal.core.inspector import parsear_salida_gdb, inspeccionar_fuente_o_binario
 from hal.core.models import StackFrame
 
 

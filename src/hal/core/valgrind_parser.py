@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def parsear_log_valgrind(texto_log: str) -> Dict[str, Any]:

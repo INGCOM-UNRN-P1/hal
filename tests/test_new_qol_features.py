@@ -14,7 +14,7 @@ from hal.core.doctor import ejecutar_diagnostico_doctor
 from hal.core.explainer import diagnosticar_crash
 from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.models import StackFrame
-from hal.core.symbols import desofuscar_direccion, inspeccionar_variables_globales
+from hal.core.symbols import desofuscar_direccion
 from hal.core.valgrind_parser import parsear_log_valgrind
 from hal.core.inspector import inspeccionar_fuente_o_binario, parsear_struct_gdb
 
