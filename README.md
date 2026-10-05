@@ -155,13 +155,14 @@ hal advice --json
 | `hal inspect-globals` | Inspecciona las variables globales y estáticas (.data y .bss) en la memoria del binario. |
 | `hal resolve-addr` | Traduce una dirección de memoria hexadecimal a archivo, línea y nombre de función. |
 | `hal parse-valgrind`, `hal valgrind` | Parsea reportes de Valgrind Memcheck y traduce violaciones a explicaciones pedagógicas. |
+| `hal schema` | Imprime el JSON Schema de la salida `--json` de check (crash v1). |
 | `hal advice` | Muestra consejos pedagógicos y buenas prácticas defensivas para evitar segfaults. |
 
 Ayuda de cada comando: `hal <comando> -h`.
 
 ### Salida JSON
 
-Con `--json`, estos comandos emiten el resultado como JSON por la salida estándar, para usarlo desde scripts, ripley o dredd: `hal check`, `hal run`, `hal report`, `hal inspect`, `hal inspect-struct`, `hal struct`, `hal doctor`, `hal generate-reproducer`, `hal replay`, `hal registers`, `hal check-fds`, `hal inspect-globals`, `hal resolve-addr`, `hal parse-valgrind`, `hal valgrind`, `hal advice`. El de `doctor --json` lleva `schema_version` y `ok`.
+Con `--json`, estos comandos emiten el resultado como JSON por la salida estándar, para usarlo desde scripts, ripley o dredd: `hal check`, `hal run`, `hal report`, `hal inspect`, `hal inspect-struct`, `hal struct`, `hal doctor`, `hal generate-reproducer`, `hal replay`, `hal registers`, `hal check-fds`, `hal inspect-globals`, `hal resolve-addr`, `hal parse-valgrind`, `hal valgrind`, `hal schema`, `hal advice`. El de `doctor --json` lleva `schema_version` y `ok`.
 
 ### Códigos de salida
 
