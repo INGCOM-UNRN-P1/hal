@@ -33,16 +33,16 @@ dependencies = [
     "rich>=13.0.0",
     "pyyaml>=6.0",
     # Núcleo común del ecosistema (N-ECO-14): contrato de línea de comandos y textos en español.
-    "yutani @ git+https://github.com/INGCOM-UNRN-P1/yutani@31f79c904ac33065cc1c2b9fd34b4c513f0028d9",
+    "yutani @ git+https://github.com/INGCOM-UNRN-P1/yutani@cf49348fae40d264006fe07dee2cc9e88dd9c934",
 ]
 
 [project.optional-dependencies]
 # Herramientas del ecosistema que se usan como biblioteca (N-ECO-01). Referencias git fijadas
 # a commits publicados; sin el extra se usa el camino propio (gcc, sin sandbox de nostromo…).
 ecosistema = [
-    "vasquez @ git+https://github.com/INGCOM-UNRN-P1/vasquez@cf815547f0aa0098d9517939358769caaeceac6a",
-    "daedalus @ git+https://github.com/INGCOM-UNRN-P1/daedalus@9cefe644353851858f2e77b7936ed34ae1c510ea",
-    "nostromo @ git+https://github.com/INGCOM-UNRN-P1/nostromo@ec62a77c6452750df644b78382e0ec6fb12a0f00",
+    "vasquez @ git+https://github.com/INGCOM-UNRN-P1/vasquez@709dd0594d7094a17ed003eda66cc1feb640c599",
+    "daedalus @ git+https://github.com/INGCOM-UNRN-P1/daedalus@0d3da518270cea8d6a0dff85d8cec61de2e89fff",
+    "nostromo @ git+https://github.com/INGCOM-UNRN-P1/nostromo@cc3f792a65de0cab4c7d846b92b0df6182994d49",
 ]
 
 [project.urls]
