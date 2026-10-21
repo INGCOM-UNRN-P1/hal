@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from yutani.hallazgos import hallazgo
 
@@ -47,6 +49,28 @@ def hallazgos(diag: DiagnosticoCrash) -> List[Dict[str, Any]]:
     if not diag.es_crash and diag.codigo_senal != "SIN_TERMINAR":
         return []
     codigo, categoria = clasificar(diag)
-    return [hallazgo("hal", codigo, categoria, "error", diag.causa_raiz_titulo,
-                     archivo=diag.archivo_falla, linea=diag.linea_falla,
-                     sugerencia=diag.accion_correctiva or None)]
+    h = hallazgo("hal", codigo, categoria, "error", diag.causa_raiz_titulo,
+                 archivo=ruta_relativa(diag.archivo_falla), linea=diag.linea_falla or None,
+                 sugerencia=diag.accion_correctiva or None)
+    # El porqué en español (lo que jonesy muestra con F1), clave opcional de la forma común.
+    if diag.explicacion:
+        h["explicacion"] = diag.explicacion
+    return [h]
+
+
+def ruta_relativa(ruta: Optional[str]) -> Optional[str]:
+    """El archivo como lo esperan jonesy y los demás clientes (yutani.hallazgos.ruta_archivo):
+    relativo al directorio de trabajo, con / y sin ./; afuera de él, absoluto. gdb informa la ruta
+    con la que se compiló (absoluta, casi siempre)."""
+    if not ruta:
+        return None
+    p = Path(ruta.replace("\\", "/") if not ruta.startswith("/") else ruta)
+    if p.is_absolute():
+        try:
+            relativa = os.path.relpath(p, Path.cwd())
+        except ValueError:  # otra unidad en Windows
+            return p.as_posix()
+        if relativa == os.pardir or relativa.startswith(os.pardir + os.sep):
+            return p.as_posix()
+        p = Path(relativa)
+    return Path(os.path.normpath(p)).as_posix()

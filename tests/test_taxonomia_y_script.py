@@ -66,3 +66,17 @@ def test_check_escribe_el_script(tmp_path):
     datos = json.loads(res.stdout)
     _comprobar_contra_el_esquema(datos)
     assert "break nulo.c:5" in (tmp_path / "nulo.gdb").read_text(encoding="utf-8")
+
+
+def test_hallazgo_con_archivo_relativo_y_explicacion(tmp_path, monkeypatch):
+    """Ola 7: gdb informa la ruta absoluta con la que se compiló; el hallazgo común lleva la
+    relativa al directorio de trabajo (la que usan jonesy y las otras herramientas) y el porqué."""
+    monkeypatch.chdir(tmp_path)
+    datos = _diag(archivo_falla=str(tmp_path / "tp" / "nulo.c")).to_dict()
+    (h,) = datos["hallazgos"]
+    assert h["archivo"] == "tp/nulo.c" and h["explicacion"]
+    try:
+        from yutani.hallazgos import validar_salida  # type: ignore[attr-defined]
+    except ImportError:  # yutani anterior a 3fb723d
+        return
+    assert validar_salida(datos, tmp_path) == []
