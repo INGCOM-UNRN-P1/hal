@@ -156,6 +156,23 @@ infinita, `--limite-pila 64` para que el Stack Overflow llegue en pocos pasos. `
 corre directamente (hace falta bishop instalado). En modo pista no se propone: la traza mostraría la
 línea y los valores que la pista oculta.
 
+**Fallas de la pila.** Tres fallas que se ven igual («se rompió la pila») y se corrigen distinto
+tienen su propia explicación y su código en `hallazgos` (campo `pila` del JSON, con la causa, la función,
+los bytes de su marco y el límite de la pila):
+
+| Causa (`pila.causa`) | Cuándo | Hallazgo |
+| :--- | :--- | :--- |
+| `recursion-sin-caso-base` | miles de marcos de una función que, según `sebastian`, no tiene caso base | `hal:recursion-sin-caso-base` |
+| `caso-base-inalcanzable` | tiene caso base, pero los argumentos no lo alcanzan (se muestran los de las últimas llamadas) | `hal:caso-base-inalcanzable` |
+| `recursion-infinita` | lo mismo sin poder consultar a `sebastian` | `hal:recursion-sin-caso-base` |
+| `arreglo-local-demasiado-grande` | un solo marco (casi siempre `main`) más grande que la pila | `hal:arreglo-local-demasiado-grande` |
+| `desborde-de-buffer-local` | se escribió más allá de un arreglo local: canario de `-fstack-protector` o dirección de retorno pisada | `hal:desborde-de-buffer` |
+
+hal mide con gdb el tamaño real de cada marco (la distancia entre su `$sp` y el del que lo llamó) y lo
+compara con el límite de la pila (`ulimit -s`; 1 MiB en Windows): «cada llamada ocupa 32 bytes, entran
+unas 262.144 llamadas anidadas». El caso base lo decide el análisis estático de `sebastian` (como
+biblioteca con el extra `ecosistema`, o su línea de comandos si está instalado).
+
 ### `hal report`
 
 Genera directamente la sección de reporte Markdown de HAL para Dredd o exporta a HTML/Discussions.

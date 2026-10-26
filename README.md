@@ -14,6 +14,7 @@ HAL es una herramienta standalone diseñada para diagnosticar fallos en tiempo d
 - Análisis de volcados de memoria (core dumps) y extracción automatizada de trazas de ejecución (backtraces) mediante GDB en modo batch.
 - Identificación de variables locales comprometidas, punteros desreferenciados y ubicación exacta de la instrucción culpable.
 - Traducción del diagnóstico técnico a explicaciones didácticas en español rioplatense.
+- Fallas de la pila diferenciadas: recursión infinita sin caso base, recursión con un caso base que nunca se alcanza (consultando a `sebastian`), arreglo local que no entra en la pila y desborde de un búfer local sobre el marco de activación (canario de `-fstack-protector` o dirección de retorno pisada). Mide con gdb los bytes de cada marco y los compara con el límite de la pila del sistema (campo `pila` del JSON).
 - Modo pista para evaluaciones (`check --pista` o `P1_PISTA=1`, que ripley exporta con `[general] pistas = true`): la señal, la causa y la función donde ocurrió, sin la línea, la variable culpable, los valores de la pila ni la corrección.
 
 ### Qué no cubre (Límites y Delegación)

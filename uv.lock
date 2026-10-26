@@ -54,6 +54,7 @@ dependencies = [
 ecosistema = [
     { name = "daedalus" },
     { name = "nostromo" },
+    { name = "sebastian" },
     { name = "vasquez" },
 ]
 
@@ -68,6 +69,7 @@ requires-dist = [
     { name = "nostromo", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/nostromo?rev=cc3f792a65de0cab4c7d846b92b0df6182994d49" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0.0" },
+    { name = "sebastian", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/sebastian?rev=3b3a12d79772fd587d6cb3deca214d2354ca57b2" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "vasquez", marker = "extra == 'ecosistema'", git = "https://github.com/INGCOM-UNRN-P1/vasquez?rev=709dd0594d7094a17ed003eda66cc1feb640c599" },
     { name = "yutani", git = "https://github.com/INGCOM-UNRN-P1/yutani?rev=cf49348fae40d264006fe07dee2cc9e88dd9c934" },
@@ -344,6 +346,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
+]
+
+[[package]]
+name = "sebastian"
+version = "0.2.0"
+source = { git = "https://github.com/INGCOM-UNRN-P1/sebastian?rev=3b3a12d79772fd587d6cb3deca214d2354ca57b2#3b3a12d79772fd587d6cb3deca214d2354ca57b2" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
+    { name = "yutani" },
 ]
 
 [[package]]

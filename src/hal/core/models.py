@@ -73,6 +73,8 @@ class DiagnosticoCrash:
     pista: bool = False  # modo pista: sin línea, valores ni corrección (ver core/pista.py)
     # Cómo ver la falla paso a paso con bishop: {"comando", "html", "nota"} (ver core/visualizacion.py).
     visualizacion: Optional[Dict[str, Any]] = None
+    # Si la falla es de la pila: causa, función, bytes del marco y límite (ver core/pila.py).
+    pila: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         ruta_rel = _normalizar_ruta_relativa(self.archivo_falla)
@@ -107,6 +109,7 @@ class DiagnosticoCrash:
             "expresion_assert": self.expresion_assert,
             **({"pista": True} if self.pista else {}),
             **({"visualizacion": self.visualizacion} if self.visualizacion else {}),
+            **({"pila": self.pila} if self.pila else {}),
             # La forma común del ecosistema (yutani.hallazgos), para dredd y el apunte.
             "hallazgos": _hallazgos(self),
         }

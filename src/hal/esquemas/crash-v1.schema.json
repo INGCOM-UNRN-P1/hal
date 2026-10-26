@@ -48,6 +48,21 @@
       }
     },
     "pista": {"type": "boolean"},
+    "pila": {
+      "description": "Si la falla es de la pila: recursion-sin-caso-base, caso-base-inalcanzable, recursion-infinita (sin saber el caso base), arreglo-local-demasiado-grande o desborde-de-buffer-local, con la función, los bytes de su marco y el límite de la pila.",
+      "type": "object",
+      "required": ["causa"],
+      "properties": {
+        "causa": {"enum": ["recursion-sin-caso-base", "caso-base-inalcanzable", "recursion-infinita", "arreglo-local-demasiado-grande", "desborde-de-buffer-local"]},
+        "funcion": {"type": ["string", "null"]},
+        "marco_bytes": {"type": "integer"},
+        "limite_bytes": {"type": "integer"},
+        "profundidad": {"type": ["integer", "null"]},
+        "profundidad_maxima_estimada": {"type": "integer"},
+        "caso_base": {"type": ["boolean", "null"]},
+        "canario": {"type": "boolean"}
+      }
+    },
     "visualizacion": {
       "description": "Cómo ver la falla paso a paso con bishop (sólo para un .c que se cae y fuera del modo pista).",
       "type": "object",

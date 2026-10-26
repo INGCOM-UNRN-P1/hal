@@ -43,6 +43,8 @@ ecosistema = [
     "vasquez @ git+https://github.com/INGCOM-UNRN-P1/vasquez@709dd0594d7094a17ed003eda66cc1feb640c599",
     "daedalus @ git+https://github.com/INGCOM-UNRN-P1/daedalus@0d3da518270cea8d6a0dff85d8cec61de2e89fff",
     "nostromo @ git+https://github.com/INGCOM-UNRN-P1/nostromo@cc3f792a65de0cab4c7d846b92b0df6182994d49",
+    # Si la función de una recursión infinita tiene caso base (core/pila.py); sin el extra, su CLI.
+    "sebastian @ git+https://github.com/INGCOM-UNRN-P1/sebastian@3b3a12d79772fd587d6cb3deca214d2354ca57b2",
 ]
 
 [project.urls]

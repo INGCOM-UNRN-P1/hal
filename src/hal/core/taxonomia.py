@@ -18,6 +18,7 @@ _POR_CODIGO: Dict[str, Tuple[str, str]] = {
     "SEGV_MAPERR": ("acceso-invalido", "punteros"),
     "SEGV_ACCERR": ("acceso-sin-permiso", "punteros"),
     "RET_ADDR_CORRUPTED": ("desborde-de-buffer", "arreglos"),
+    "STACK_FRAME_TOO_LARGE": ("arreglo-local-demasiado-grande", "arreglos"),
     "SIN_TERMINAR": ("sin-terminar", "control"),
 }
 _POR_SENAL: Dict[str, Tuple[str, str]] = {
@@ -39,6 +40,8 @@ def clasificar(diag: DiagnosticoCrash) -> Tuple[str, str]:
         return "assert-fallido", "pruebas"
     if diag.es_buffer_overflow_ret:
         return "desborde-de-buffer", "arreglos"
+    if diag.pila and diag.pila.get("causa") == "caso-base-inalcanzable":
+        return "caso-base-inalcanzable", "recursion"
     if diag.codigo_senal in _POR_CODIGO:
         return _POR_CODIGO[diag.codigo_senal]
     return _POR_SENAL.get(diag.tipo_senal, ("senal-" + diag.tipo_senal.lower(), "punteros"))

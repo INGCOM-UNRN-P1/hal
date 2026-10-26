@@ -27,7 +27,7 @@ def pista_activa(bandera: bool = False) -> bool:
 def explicacion_sin_ubicacion(texto: str, variable: Optional[str]) -> str:
     """La explicación sin las oraciones que dicen la línea («En la línea 5, …») o nombran la variable culpable."""
     oraciones = re.split(r"(?<=[.!?])\s+|\n+", texto)
-    ocultar = [re.compile(r"\bl[ií]neas?\s+\d+", re.IGNORECASE)]
+    ocultar = [re.compile(r"\bl[ií]neas?\s+\d+", re.IGNORECASE), re.compile(r"últimas llamadas:")]
     if variable:
         ocultar.append(re.compile(rf"['`\"]{re.escape(variable)}['`\"]"))
     return " ".join(o for o in oraciones if o.strip() and not any(r.search(o) for r in ocultar))

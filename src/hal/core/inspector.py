@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hal.core.explainer import diagnosticar_crash, diagnosticar_puntero_a_local, diagnosticar_sin_terminar
 from hal.core.models import DiagnosticoCrash, StackFrame
+from hal.core.pila import SCRIPT_MARCOS, diagnosticar_pila
 
 ES_WINDOWS = os.name == "nt"
 
@@ -250,6 +251,8 @@ def ejecutar_con_gdb(
         f.write("except Exception:\n")
         f.write("    pass\n")
         f.write("end\n")
+        # Bytes de cada marco, para distinguir recursión, marco gigante y búfer local (core/pila.py).
+        f.write(SCRIPT_MARCOS)
         if struct_nombre:
             clean_s = struct_nombre.strip().lstrip("*")
             f.write("echo ===GDB_STRUCT_BEGIN===\n")
@@ -583,6 +586,8 @@ def inspeccionar_fuente_o_binario(
         )
         if diagnostico.es_crash:
             diagnostico = diagnosticar_puntero_a_local(diagnostico, advertencias)
+            fuente = ruta_objetivo if ruta_objetivo.suffix == ".c" else None
+            diagnostico = diagnosticar_pila(diagnostico, stdout + "\n" + stderr, fuente)
 
         # Si compilamos el fuente, ajustar el nombre de archivo en los frames
         if ruta_objetivo.suffix in (".c", ".cpp", ".cc") and diagnostico.frames:
