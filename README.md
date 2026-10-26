@@ -100,7 +100,13 @@ hal replay programa.c
 
 # Generar script de reproducción autocontenido en Bash para compartir
 hal generate-reproducer programa.c -o reproductor.sh
+
+# Ver con bishop, paso a paso, cómo se llegó a la falla (la página abre en ese paso)
+hal run programa.c --traza-html programa.falla.html
 ```
+
+Cada crash de un `.c` trae además el comando de `bishop trace --hasta-falla --html` para hacerlo a mano
+(en el JSON, `visualizacion.comando`).
 
 ### 8. Inspección de Estructuras, Registros y Descriptores
 ```bash

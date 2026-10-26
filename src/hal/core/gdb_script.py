@@ -22,7 +22,10 @@ def generar_script_gdb(diag: DiagnosticoCrash, objetivo: Path, args: Optional[Li
                       f"gdb -x {binario.name}.gdb ./{binario.name}")
     else:
         lineas.append(f"# Abrilo así: gdb -x {binario.name}.gdb ./{binario.name}")
-    lineas += [f"# Diagnóstico: {diag.causa_raiz_titulo}", "", "set pagination off"]
+    lineas.append(f"# Diagnóstico: {diag.causa_raiz_titulo}")
+    if diag.visualizacion:
+        lineas.append(f"# Para verlo paso a paso en el navegador: {diag.visualizacion['comando']}")
+    lineas += ["", "set pagination off"]
 
     archivo = Path(diag.archivo_falla).name if diag.archivo_falla else None
     if diag.codigo_senal == "STACK_OVERFLOW" and diag.funcion_falla:

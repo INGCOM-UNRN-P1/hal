@@ -16,6 +16,7 @@ from hal.core.doctor import ejecutar_diagnostico_doctor, obtener_estado_doctor
 from hal.core.exporter import exportar_discussion_markdown, exportar_html
 from hal.core.inspector import inspeccionar_fuente_o_binario, resolver_binario
 from hal.core.pista import diagnostico_en_pista, pista_activa
+from hal.core.visualizacion import completar_visualizacion, generar_traza_html
 # La presentación (Rich y Markdown) está en presentacion.py; se reexporta para quien la importaba de acá.
 from hal.presentacion import _codigo_salida, _renderizar_diagnostico_rich, generar_seccion_markdown  # noqa: F401
 
@@ -66,6 +67,7 @@ def run_cmd(
     all_frames: bool = typer.Option(False, "--all-frames", help="Mostrar marcos de pila de libc/sistema completos."),
     pista: bool = typer.Option(False, "--pista", help="Modo pista (o P1_PISTA=1): la falla y la función, sin la línea, los valores ni la corrección."),
     gdb_script: Optional[Path] = typer.Option(None, "--gdb-script", help="Escribir un script de gdb que se detiene donde ocurrió el crash, para seguir depurando."),
+    traza_html: Optional[Path] = typer.Option(None, "--traza-html", help="Con un .c que se cae: guardar con bishop la traza paso a paso hasta la falla (página HTML que abre en ese paso)."),
 ) -> None:
     """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
     diag = inspeccionar_fuente_o_binario(
@@ -83,6 +85,14 @@ def run_cmd(
     )
     if pista_activa(pista):
         diag = diagnostico_en_pista(diag)
+    completar_visualizacion(diag, objetivo, args or [], stdin or "")
+
+    if traza_html:
+        ok, mensaje = generar_traza_html(diag, objetivo, traza_html, args or [], stdin or "")
+        if ok:
+            err_console.print(f"[green]✓ Traza paso a paso hasta la falla:[/green] [cyan]{mensaje}[/cyan]")
+        else:
+            err_console.print(f"[yellow]No se generó la traza paso a paso: {mensaje}[/yellow]")
 
     if gdb_script:
         from hal.core.gdb_script import generar_script_gdb
@@ -139,6 +149,7 @@ def report_cmd(
         args=[],
         stdin_data=stdin or "",
     )
+    completar_visualizacion(diag, objetivo, [], stdin or "")
 
     if json_output:
         print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))

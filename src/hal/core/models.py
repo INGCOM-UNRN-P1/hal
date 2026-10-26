@@ -71,6 +71,8 @@ class DiagnosticoCrash:
     es_assert_fallido: bool = False
     expresion_assert: Optional[str] = None
     pista: bool = False  # modo pista: sin línea, valores ni corrección (ver core/pista.py)
+    # Cómo ver la falla paso a paso con bishop: {"comando", "html", "nota"} (ver core/visualizacion.py).
+    visualizacion: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         ruta_rel = _normalizar_ruta_relativa(self.archivo_falla)
@@ -104,6 +106,7 @@ class DiagnosticoCrash:
             "es_assert_fallido": self.es_assert_fallido,
             "expresion_assert": self.expresion_assert,
             **({"pista": True} if self.pista else {}),
+            **({"visualizacion": self.visualizacion} if self.visualizacion else {}),
             # La forma común del ecosistema (yutani.hallazgos), para dredd y el apunte.
             "hallazgos": _hallazgos(self),
         }

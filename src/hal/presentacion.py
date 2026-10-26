@@ -169,6 +169,17 @@ def _renderizar_diagnostico_rich(
             title="🛠️ Acción Correctiva Sugerida",
             border_style="green",
         ))
+    if diag.visualizacion:
+        nota = f"\n[dim]{diag.visualizacion['nota']}[/dim]" if diag.visualizacion.get("nota") else ""
+        if diag.visualizacion.get("html"):
+            nota += f"\n\n[green]Ya está generada:[/green] [cyan]{Path(diag.visualizacion['html']).resolve().as_uri()}[/cyan]"
+        console.print(Panel(
+            f"Para ver cómo llegó el programa hasta la falla, paso a paso y con las variables de cada "
+            f"función (la página abre en el paso de la falla):\n\n[bold cyan]{diag.visualizacion['comando']}[/bold cyan]"
+            f"{nota}",
+            title="🔎 Paso a paso (bishop)",
+            border_style="cyan",
+        ))
     if diag.pista:
         console.print("[dim]Modo pista: buscá la falla en la función indicada; la línea, los valores y la corrección "
                       "no se muestran.[/dim]")
@@ -204,6 +215,8 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
             lines.append(f"> [!WARNING]\n> **Inyección Activa de Fallos (Vasquez):** {diag.vasquez_inyeccion_detectada.get('detalle', 'Inyección LD_PRELOAD')}\n")
         if diag.accion_correctiva:
             lines.append(f"**Sugerencia de corrección:** {diag.accion_correctiva}\n")
+        if diag.visualizacion:
+            lines.append(f"**Para verlo paso a paso hasta la falla:** `{diag.visualizacion['comando']}`\n")
         if diag.campos_struct:
             lines.append(f"### Inspección de Estructura (`{diag.struct_nombre or 'struct'}`)")
             lines.append("| Campo | Tipo | Valor |")

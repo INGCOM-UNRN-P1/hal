@@ -47,6 +47,16 @@
         }
       }
     },
-    "pista": {"type": "boolean"}
+    "pista": {"type": "boolean"},
+    "visualizacion": {
+      "description": "Cómo ver la falla paso a paso con bishop (sólo para un .c que se cae y fuera del modo pista).",
+      "type": "object",
+      "required": ["comando"],
+      "properties": {
+        "comando": {"type": "string"},
+        "html": {"type": ["string", "null"]},
+        "nota": {"type": "string"}
+      }
+    }
   }
 }

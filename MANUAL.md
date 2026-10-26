@@ -101,6 +101,8 @@ Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagó
 | `--discussion-md` | `Optional[Path]` | `None` | Ruta para exportar plantilla Markdown para GitHub Discussions. |
 | `--all-frames` | `bool` | `False` | Mostrar marcos de pila de libc/sistema completos. |
 | `--pista` | `bool` | `False` | Modo pista (o `P1_PISTA=1`): la falla y la función, sin la línea, los valores ni la corrección. |
+| `--gdb-script` | `Optional[Path]` | `None` | Escribir un script de gdb que se detiene donde ocurrió el crash, para seguir depurando. |
+| `--traza-html` | `Optional[Path]` | `None` | Con un .c que se cae: guardar con bishop la traza paso a paso hasta la falla (página HTML que abre en ese paso). |
 
 #### Ejemplo de Invocación
 ```bash
@@ -136,11 +138,23 @@ Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagó
 | `--discussion-md` | `Optional[Path]` | `None` | Ruta para exportar plantilla Markdown para GitHub Discussions. |
 | `--all-frames` | `bool` | `False` | Mostrar marcos de pila de libc/sistema completos. |
 | `--pista` | `bool` | `False` | Modo pista (o `P1_PISTA=1`): la falla y la función, sin la línea, los valores ni la corrección. |
+| `--gdb-script` | `Optional[Path]` | `None` | Escribir un script de gdb que se detiene donde ocurrió el crash, para seguir depurando. |
+| `--traza-html` | `Optional[Path]` | `None` | Con un .c que se cae: guardar con bishop la traza paso a paso hasta la falla (página HTML que abre en ese paso). |
 
 #### Ejemplo de Invocación
 ```bash
 hal run <objetivo>
+hal run tp.c --traza-html tp.falla.html
 ```
+
+**Paso a paso hasta la falla (bishop).** Cuando un `.c` se cae, el diagnóstico (en la terminal, en la
+sección Markdown, en el JSON como `visualizacion.comando` y como comentario del `--gdb-script`) trae el
+comando de `bishop trace --hasta-falla --html` que reproduce la ejecución y abre la página en el paso
+exacto de la falla, con la pila y las variables de cada función. Lleva la entrada (`--input`, con una
+nota para guardar en `entrada.txt` lo que se pasó por `--stdin`), los argumentos y, si es una recursión
+infinita, `--limite-pila 64` para que el Stack Overflow llegue en pocos pasos. `--traza-html RUTA` lo
+corre directamente (hace falta bishop instalado). En modo pista no se propone: la traza mostraría la
+línea y los valores que la pista oculta.
 
 ### `hal report`
 
