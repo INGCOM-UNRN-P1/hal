@@ -173,6 +173,33 @@ compara con el límite de la pila (`ulimit -s`; 1 MiB en Windows): «cada llamad
 unas 262.144 llamadas anidadas». El caso base lo decide el análisis estático de `sebastian` (como
 biblioteca con el extra `ecosistema`, o su línea de comandos si está instalado).
 
+### `hal explain`
+
+Ejecuta el programa (compilándolo si es un `.c`) y explica por qué se cortó. Sin `--resumen` muestra el
+diagnóstico completo, como `hal run`.
+
+| Opción / Banderas | Tipo | Por Defecto | Descripción |
+| :--- | :--- | :--- | :--- |
+| `--stdin`, `-i` | `Optional[str]` | `None` | Cadena de texto para la entrada estándar. |
+| `--resumen` | `bool` | `False` | Diagnóstico corto, sin jerga del sistema operativo: dónde, qué pasó, qué hacer y qué repasar. |
+| `--json` | `bool` | `False` | Emitir el resumen (`resumen` y `hallazgos`) o el diagnóstico en JSON. |
+| `--pista` | `bool` | `False` | Modo pista (o `P1_PISTA=1`): sin la línea, la variable ni qué hacer. |
+
+Con `--resumen` no aparecen señales, códigos como `SEGV_MAPERR`, direcciones ni registros: el texto sale
+del código del hallazgo (no de la explicación técnica) y habla del código C. Sale con 1 si el programa se
+cortó, como `hal run`.
+
+```text
+$ hal explain tp.c --resumen
+Se cortó en tp.c:5, en la función sumar():
+    s += v[i];
+Qué pasó: Se usó el puntero 'v' que vale NULL: no apunta a ningún dato, así que no se puede leer ni escribir a través de él.
+Qué hacer: Antes de usarlo, verificá que no sea NULL (por ejemplo, lo que devuelve malloc o fopen) y decidí qué hacer si lo es.
+Para repasar: https://ingcom-unrn-p1.github.io/punteros
+```
+
+El enlace es la página del apunte de la categoría del hallazgo (`yutani.hallazgos.enlace_apunte`).
+
 ### `hal report`
 
 Genera directamente la sección de reporte Markdown de HAL para Dredd o exporta a HTML/Discussions.

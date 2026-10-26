@@ -8,7 +8,7 @@ import json
 import shlex
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.panel import Panel
@@ -17,6 +17,9 @@ from rich.table import Table
 from hal.core.advice import obtener_consejos
 from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.inspector import inspeccionar_fuente_o_binario
+from hal.core.pista import diagnostico_en_pista, pista_activa
+from hal.core.resumen import resumir, texto_resumen
+from hal.core.visualizacion import completar_visualizacion
 from hal.core.symbols import desofuscar_direccion, inspeccionar_variables_globales
 from hal.core.valgrind_parser import parsear_log_valgrind
 
@@ -246,6 +249,35 @@ def valgrind_cmd(
         console.print(f"[bold yellow]💧 Fugas de memoria detectadas: {res['fugas_bytes']} bytes sin liberar.[/bold yellow]")
 
     raise typer.Exit(code=1)
+
+
+@app.command("explain")
+def explain_cmd(
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo C (.c) o binario a ejecutar y explicar."),
+    args: Optional[List[str]] = typer.Argument(None, help="Argumentos a pasar al programa."),
+    stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Cadena de texto para la entrada estándar."),
+    resumen: bool = typer.Option(False, "--resumen", help="Diagnóstico corto, sin jerga del sistema operativo: dónde, qué pasó, qué hacer y qué repasar."),
+    json_output: bool = typer.Option(False, "--json", help="Emitir el resumen (o el diagnóstico) en JSON."),
+    pista: bool = typer.Option(False, "--pista", help="Modo pista (o P1_PISTA=1): sin la línea, la variable ni qué hacer."),
+) -> None:
+    """Ejecuta el programa y explica por qué se cortó; con --resumen, en cuatro renglones y sin jerga."""
+    diag = inspeccionar_fuente_o_binario(ruta_objetivo=objetivo, args=args or [], stdin_data=stdin or "")
+    if pista_activa(pista):
+        diag = diagnostico_en_pista(diag)
+    completar_visualizacion(diag, objetivo, args or [], stdin or "")
+    if not resumen:
+        if json_output:
+            print(json.dumps(diag.to_dict(), indent=2, ensure_ascii=False))
+        else:
+            _renderizar_diagnostico_rich(diag, ruta_fuente=objetivo if objetivo.suffix == ".c" else None)
+        raise typer.Exit(code=_codigo_salida(diag))
+    datos = resumir(diag)
+    if json_output:
+        print(json.dumps({"schema_version": "1.0.0", "resumen": datos, "hallazgos": diag.to_dict()["hallazgos"]},
+                         indent=2, ensure_ascii=False))
+    else:
+        print(texto_resumen(datos))
+    raise typer.Exit(code=_codigo_salida(diag))
 
 
 @app.command("schema")

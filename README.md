@@ -63,6 +63,9 @@ hal run programa_con_fallo.c
 # 2. Diagnosticar con salida estructurada JSON para bots y CI
 hal run programa_con_fallo.c --json
 
+# 2b. Resumen para el estudiante: dónde, qué pasó en el código, qué hacer y qué repasar, sin jerga
+hal explain programa_con_fallo.c --resumen
+
 # 3. Pasar argumentos y datos por stdin
 hal run programa.c arg1 arg2 --stdin "10\n20\n"
 
