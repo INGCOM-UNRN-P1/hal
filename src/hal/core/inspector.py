@@ -355,10 +355,12 @@ def parsear_salida_gdb(
     salida_prog = ""
 
     # 1. Detectar señal y dirección
-    m_sig = re.search(r"Program received signal (\w+),\s*([^.\n]+)", gdb_stdout)
+    m_sig = re.search(r"(?:Program|Thread\s+\d+(?:\s+\"[^\"]+\")?)\s+received signal\s+(\w+)(?:[,\:]\s*([^.\n]+))?", gdb_stdout)
+    if not m_sig:
+        m_sig = re.search(r"received signal\s+(\w+)(?:[,\:]\s*([^.\n]+))?", gdb_stdout)
     if m_sig:
         senal = m_sig.group(1).strip()
-        codigo_senal = m_sig.group(2).strip()
+        codigo_senal = m_sig.group(2).strip() if m_sig.group(2) else None
 
     m_prof = re.search(r"PROFUNDIDAD=(\d+)(\+?)", gdb_stdout)
     profundidad = int(m_prof.group(1)) if m_prof else None
@@ -404,8 +406,9 @@ def parsear_salida_gdb(
             line_str = line.strip()
             if "=" in line_str and not line_str.startswith("#"):
                 k, v = line_str.split("=", 1)
+                k = k.strip()
                 if k.isidentifier():
-                    locals_dict[k.strip()] = v.strip()
+                    locals_dict[k] = v.strip()
 
         frames.append(StackFrame(
             nivel=nivel,

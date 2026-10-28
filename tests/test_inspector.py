@@ -111,3 +111,18 @@ def test_parsea_marcos_de_gdb_con_rutas_de_windows():
         ("invertir_vector", "C:/Users/alumno/tp/main.c", 15),
         ("main", "C:/Users/alumno/tp/main.c", 27),
     ]
+
+
+def test_parsea_senal_gdb_thread_windows_y_variables_locales():
+    salida = ("Thread 1 received signal SIGSEGV, Segmentation fault.\n"
+              "===GDB_BACKTRACE===\n"
+              "#0  0x00007ff6a1b21456 in main () at C:/Users/alumno/tp/tp.c:5\n"
+              "        p = 0x0\n"
+              "        contador = 10\n"
+              "===GDB_LOCALS===\n")
+    diag = parsear_salida_gdb(salida)
+    assert diag.tipo_senal == "SIGSEGV"
+    assert diag.codigo_senal == "SEGV_MAPERR"
+    assert diag.frames[0].variables_locales == {"p": "0x0", "contador": "10"}
+    assert diag.variable_culpable == "p"
+    assert "NULL" in diag.causa_raiz_titulo

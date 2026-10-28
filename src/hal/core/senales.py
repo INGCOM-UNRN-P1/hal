@@ -373,9 +373,10 @@ def _diagnosticar_sigsegv(
             f"3. Si usaste `free(p)`, asignale inmediatamente `p = NULL;` para evitar accesos colgantes."
         )
 
+    cod = codigo_senal if codigo_senal and codigo_senal.lower() not in ("segmentation fault", "sigsegv") else None
     return DiagnosticoCrash(
         tipo_senal="SIGSEGV",
-        codigo_senal=codigo_senal or ("SEGV_MAPERR" if es_null else "SEGV_ACCERR"),
+        codigo_senal=cod or "SEGV_MAPERR",
         direccion_memoria=direccion,
         causa_raiz_titulo=titulo,
         explicacion=explicacion,
