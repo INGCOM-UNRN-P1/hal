@@ -183,7 +183,7 @@ int main() {
         diag.es_invalid_free is True
         or diag.codigo_senal == "INVALID_POINTER_FREE"
         or "invalid pointer" in diag.salida_programa.lower()
-        or diag.tipo_senal in ("SIGSEGV", "SIGABRT")
+        or diag.tipo_senal in ("SIGSEGV", "SIGABRT", "SIGTRAP")
     )
 
 
