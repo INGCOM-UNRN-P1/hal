@@ -42,6 +42,7 @@ jobs:
   test-windows:
     name: Test Windows (MSYS2 UCRT64)
     runs-on: windows-2025
+    timeout-minutes: 20
     # Los estudiantes usan Windows (entorno: MSYS2 UCRT64): la suite tiene que pasar también ahí
     # (N-ECO-10).
     env:
