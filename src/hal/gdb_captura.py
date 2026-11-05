@@ -142,15 +142,27 @@ def registros(marco):
     return valores
 
 
+def siginfo_linux():
+    info = gdb.parse_and_eval("$_siginfo")
+    return int(info["si_code"]), hex(int(info["_sifields"]["_sigfault"]["si_addr"]))
+
+
+def siginfo_windows():
+    """En Windows `$_siginfo` es un EXCEPTION_RECORD, con la dirección en una unión sin nombre. No
+    distingue dirección sin mapear de permiso denegado: se informa como SEGV_MAPERR (1)."""
+    return 1, hex(int(gdb.parse_and_eval("$_siginfo.AccessViolationInformation.Address")))
+
+
 def siginfo(senal):
-    """(si_code, dirección de la falla) en Linux; en Windows `$_siginfo` tiene otra forma."""
+    """(si_code, dirección de la falla), si la señal los tiene."""
     if senal not in SENALES_CON_DIRECCION:
         return None, None
-    try:
-        info = gdb.parse_and_eval("$_siginfo")
-        return int(info["si_code"]), hex(int(info["_sifields"]["_sigfault"]["si_addr"]))
-    except ERRORES:
-        return None, None
+    for leer in (siginfo_linux, siginfo_windows):
+        try:
+            return leer()
+        except ERRORES:
+            continue
+    return None, None
 
 
 def campos_de(valor):
@@ -266,4 +278,5 @@ def principal():
         pass
 
 
-principal()
+if "HAL_CAPTURA_CONFIG" in os.environ:
+    principal()
