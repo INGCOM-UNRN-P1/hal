@@ -64,7 +64,7 @@ def _detectar_inyeccion_vasquez(
     if not (vasquez_injected or "[vasquez]" in texto_combinado or "vasquez" in texto_combinado):
         return None
     matches = re.findall(r"\[vasquez\]\s*([^\n\r]+)", gdb_output + "\n" + salida_prog, re.IGNORECASE)
-    detalle_v = "; ".join(m.strip() for m in matches) if matches else "Inyección deliberada de fallos en runtime vía LD_PRELOAD"
+    detalle_v = "; ".join(m.strip() for m in matches) if matches else "Inyección deliberada de fallos en ejecución vía LD_PRELOAD"
     return {"inyectado": True, "detalle": detalle_v}
 
 
@@ -171,7 +171,7 @@ def _diagnosticar_oom(
         ),
         accion_correctiva=(
             f"1. Verificá los argumentos pasados a `malloc()`, `calloc()` o `realloc()` asegurándote de que la cantidad sea positiva y razonable.\n"
-            f"2. Chequeá que la multiplicación para el tamaño total no sufra integer overflow antes de reservar.\n"
+            f"2. Chequeá que la multiplicación para el tamaño total no se desborde (integer overflow) antes de reservar.\n"
             f"3. Validá siempre que el puntero devuelto no sea NULL antes de utilizarlo defensivamente."
         ),
         archivo_falla=archivo,

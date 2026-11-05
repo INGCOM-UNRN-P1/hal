@@ -141,9 +141,9 @@ def _enriquecer_con_vasquez(diag: DiagnosticoCrash) -> None:
     """Enriquece la explicación diagnóstica si se detectó una inyección deliberada de fallos de Vasquez."""
     if not diag.vasquez_inyeccion_detectada:
         return
-    detalle = diag.vasquez_inyeccion_detectada.get("detalle", "Inyección de fallos en runtime")
+    detalle = diag.vasquez_inyeccion_detectada.get("detalle", "Inyección de fallos en ejecución")
     nota = (
-        f"\n\n⚠️ INYECCIÓN DE FALLOS POR VASQUEZ: Este crash se produjo bajo la inyección activa de Vasquez "
+        f"\n\n⚠️ INYECCIÓN DE FALLOS POR VASQUEZ: Esta falla se produjo bajo la inyección activa de Vasquez "
         f"para auditar la programación defensiva ({detalle}). "
         f"El retorno forzado de NULL o error de llamada al sistema no fue controlado adecuadamente por tu código antes de acceder a la memoria."
     )
@@ -190,7 +190,7 @@ def diagnosticar_sin_terminar() -> DiagnosticoCrash:
         tipo_senal="TIMEOUT",
         codigo_senal="SIN_TERMINAR",
         direccion_memoria=None,
-        causa_raiz_titulo="El programa no terminó a tiempo (¿bucle infinito o espera de entrada?)",
+        causa_raiz_titulo="El programa no terminó a tiempo (¿lazo infinito o espera de entrada?)",
         explicacion=(
             "El programa siguió corriendo hasta el tiempo límite sin recibir ninguna señal de error.\n"
             "Las causas típicas son un lazo cuya condición nunca se vuelve falsa o un scanf/fgets que "

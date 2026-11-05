@@ -9,7 +9,7 @@ CONSEJOS_DIDACTICOS: List[Dict[str, str]] = [
     {
         "tema": "Inicialización Defensiva de Punteros",
         "regla": "Inicializá siempre todo puntero en NULL al momento de declararlo.",
-        "explicacion": "En C, una variable local sin inicializar contiene 'basura' (valores residuales de la memoria de la pila). Si intentás desreferenciarla o chequear `if (p != NULL)`, el chequeo pasará pero la dirección será inválida, provocando un Segfault inmediato.",
+        "explicacion": "En C, una variable local sin inicializar contiene 'basura' (valores residuales de la memoria de la pila). Si intentás desreferenciarla o chequear `if (p != NULL)`, el chequeo pasará pero la dirección será inválida, provocando una violación de segmento inmediata.",
         "ejemplo_correcto": "int *ptr = NULL;\nFILE *f = NULL;",
         "ejemplo_incorrecto": "int *ptr; // Peligro: contiene dirección basura",
     },
@@ -25,7 +25,7 @@ CONSEJOS_DIDACTICOS: List[Dict[str, str]] = [
         "regla": "Comprobá siempre si malloc, calloc o fopen retornaron NULL antes de usar el puntero.",
         "explicacion": "Si el sistema se queda sin memoria o el archivo solicitado no existe, la función retornará NULL. Acceder a un puntero sin verificar el retorno causa SIGSEGV (SEGV_MAPERR) en la primera lectura o escritura.",
         "ejemplo_correcto": "char *cad = malloc(100);\nif (cad == NULL) {\n    return ERROR_MEMORIA;\n}",
-        "ejemplo_incorrecto": "char *cad = malloc(100);\ncad[0] = 'A'; // Si malloc falló, crash!",
+        "ejemplo_incorrecto": "char *cad = malloc(100);\ncad[0] = 'A'; // Si malloc falló, el programa se cae",
     },
     {
         "tema": "Límites de Arreglos y Lazos",
@@ -37,7 +37,7 @@ CONSEJOS_DIDACTICOS: List[Dict[str, str]] = [
     {
         "tema": "Terminador Nulo en Cadenas de Caracteres",
         "regla": "Reservá siempre 1 byte adicional para el '\\0' final al manipular strings.",
-        "explicacion": "Las funciones estándar de strings (`strlen`, `printf %s`, `strcmp`) avanzan en memoria byte a byte hasta encontrar el terminador `\\0`. Si la cadena no está terminada, continuarán leyendo memoria adyacente hasta causar un Segfault o volcar datos privados.",
+        "explicacion": "Las funciones estándar de strings (`strlen`, `printf %s`, `strcmp`) avanzan en memoria byte a byte hasta encontrar el terminador `\\0`. Si la cadena no está terminada, continuarán leyendo memoria adyacente hasta causar una violación de segmento o volcar datos privados.",
         "ejemplo_correcto": "char *str = malloc(longitud + 1);\nstr[longitud] = '\\0';",
         "ejemplo_incorrecto": "char *str = malloc(longitud); // Falta espacio para '\\0'",
     },

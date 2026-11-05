@@ -153,21 +153,21 @@ hal advice --json
 
 | Comando | Descripción |
 |:--|:--|
-| `hal check`, `hal run` | Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash. |
+| `hal check`, `hal run` | Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre una falla. |
 | `hal report` | Genera directamente la sección de reporte Markdown de HAL para Dredd o exporta a HTML/Discussions. |
 | `hal inspect` | Inspecciona un binario compilado ante posibles fallos de ejecución. |
 | `hal inspect-struct`, `hal struct` | Inspecciona y vuelca los campos de una estructura (struct) en memoria (Mejora 22). |
 | `hal doctor` | Verifica el estado del entorno (GCC, GDB, Valgrind, addr2line). |
-| `hal generate-reproducer` | Genera un script autónomo en Bash para reproducir exactamente el crash en cualquier máquina. |
-| `hal replay` | Ejecuta y navega paso a paso la traza forense del crash con renderizado Rich. |
-| `hal registers` | Muestra los valores de los registros de CPU (RAX, RSP, RIP, etc.) capturados durante el crash. |
+| `hal generate-reproducer` | Genera un script autónomo en Bash para reproducir exactamente la falla en cualquier máquina. |
+| `hal replay` | Ejecuta y navega paso a paso la traza forense de la falla con renderizado Rich. |
+| `hal registers` | Muestra los valores de los registros de CPU (RAX, RSP, RIP, etc.) capturados durante la falla. |
 | `hal check-fds` | Audita aperturas de archivos y descriptores huérfanos sin cerrar. |
 | `hal inspect-globals` | Inspecciona las variables globales y estáticas (.data y .bss) en la memoria del binario. |
 | `hal resolve-addr` | Traduce una dirección de memoria hexadecimal a archivo, línea y nombre de función. |
 | `hal parse-valgrind`, `hal valgrind` | Parsea reportes de Valgrind Memcheck y traduce violaciones a explicaciones pedagógicas. |
 | `hal explain` | Ejecuta el programa y explica por qué se cortó; con --resumen, en cuatro renglones y sin jerga. |
 | `hal schema` | Imprime el JSON Schema de la salida `--json` de check (crash v1). |
-| `hal advice` | Muestra consejos pedagógicos y buenas prácticas defensivas para evitar segfaults. |
+| `hal advice` | Muestra consejos pedagógicos y buenas prácticas defensivas para evitar violaciones de segmento. |
 
 Ayuda de cada comando: `hal <comando> -h`.
 

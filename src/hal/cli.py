@@ -38,7 +38,7 @@ err_console = Console(stderr=True)
 app: typer.Typer = crear_app(
     "hal",
     __version__,
-    "🤖 HAL — Asistente forense de core dumps y análisis pedagógico post-mortem de segfaults en C.",
+    "🤖 HAL — Asistente forense de core dumps y análisis pedagógico post-mortem de violaciones de segmento en C.",
     add_completion=True,
 )
 
@@ -66,10 +66,10 @@ def run_cmd(
     discussion_md: Optional[Path] = typer.Option(None, "--discussion-md", help="Ruta para exportar plantilla Markdown para GitHub Discussions."),
     all_frames: bool = typer.Option(False, "--all-frames", help="Mostrar marcos de pila de libc/sistema completos."),
     pista: bool = typer.Option(False, "--pista", help="Modo pista (o P1_PISTA=1): la falla y la función, sin la línea, los valores ni la corrección."),
-    gdb_script: Optional[Path] = typer.Option(None, "--gdb-script", help="Escribir un script de gdb que se detiene donde ocurrió el crash, para seguir depurando."),
+    gdb_script: Optional[Path] = typer.Option(None, "--gdb-script", help="Escribir un script de gdb que se detiene donde ocurrió la falla, para seguir depurando."),
     traza_html: Optional[Path] = typer.Option(None, "--traza-html", help="Con un .c que se cae: guardar con bishop la traza paso a paso hasta la falla (página HTML que abre en ese paso)."),
 ) -> None:
-    """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre un crash."""
+    """Compila (si es .c), ejecuta el programa y genera un diagnóstico forense pedagógico si ocurre una falla."""
     diag = inspeccionar_fuente_o_binario(
         ruta_objetivo=objetivo,
         args=args or [],

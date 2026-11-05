@@ -57,7 +57,7 @@ def ejecutar_diagnostico_doctor(console: Optional[Console] = None) -> bool:
 
     # GDB
     gdb_info = herramientas["gdb"]
-    tabla.add_row("Depurador GDB", "[green]✓ Presente[/green]" if gdb_info["presente"] else "[yellow]⚠️ Faltante[/yellow]", gdb_info["ruta"] or "Recomendado para backtraces completos (sudo apt install gdb)")
+    tabla.add_row("Depurador GDB", "[green]✓ Presente[/green]" if gdb_info["presente"] else "[yellow]⚠️ Faltante[/yellow]", gdb_info["ruta"] or "Recomendado para trazas de llamadas completas (sudo apt install gdb)")
 
     # Valgrind
     val_info = herramientas["valgrind"]

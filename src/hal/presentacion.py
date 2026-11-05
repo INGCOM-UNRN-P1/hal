@@ -138,7 +138,7 @@ def _renderizar_diagnostico_rich(
 
     # Volcado de Struct en Memoria (Mejora 22)
     if diag.campos_struct:
-        tabla_struct = Table(title=f"📦 Volcado de Memoria del Struct '{diag.struct_nombre or 'objeto'}' en el Crash")
+        tabla_struct = Table(title=f"📦 Volcado de Memoria del Struct '{diag.struct_nombre or 'objeto'}' en la Falla")
         tabla_struct.add_column("Campo", style="bold cyan")
         tabla_struct.add_column("Tipo", style="yellow")
         tabla_struct.add_column("Valor en Memoria", style="green")
@@ -195,7 +195,7 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
     status = "fail" if _codigo_salida(diag) else "ok"
     lines = [
         f"<!-- dredd-section: hal, tool=hal, version=1.0.0, status={status} -->\n",
-        "## Diagnóstico Forense de Crash y Señales (Hal)\n",
+        "## Diagnóstico Forense de Fallas y Señales (Hal)\n",
     ]
     if diag.tipo_senal == "ERROR":  # no se pudo ejecutar (p. ej., el .c no compila): no es una ejecución exitosa
         lines.append(f"- **Estado:** ✗ {diag.causa_raiz_titulo}: {diag.explicacion}\n")

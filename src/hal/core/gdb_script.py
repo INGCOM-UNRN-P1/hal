@@ -15,7 +15,7 @@ from hal.core.models import DiagnosticoCrash
 def generar_script_gdb(diag: DiagnosticoCrash, objetivo: Path, args: Optional[List[str]] = None) -> str:
     binario = objetivo.with_suffix("") if objetivo.suffix == ".c" else objetivo
     lineas = [
-        "# Script de gdb generado por hal para seguir depurando el crash.",
+        "# Script de gdb generado por hal para seguir depurando la falla.",
     ]
     if objetivo.suffix == ".c":
         lineas.append(f"# Compilá con símbolos y abrilo así: gcc -g -O0 {objetivo.name} -o {binario.name} && "
@@ -35,7 +35,7 @@ def generar_script_gdb(diag: DiagnosticoCrash, objetivo: Path, args: Optional[Li
             f"break {diag.funcion_falla}",
         ]
     elif archivo and diag.linea_falla:
-        lineas += [f"# Se detiene en la línea donde ocurrió el crash, antes de ejecutarla.",
+        lineas += [f"# Se detiene en la línea donde ocurrió la falla, antes de ejecutarla.",
                    f"break {archivo}:{diag.linea_falla}"]
     elif diag.funcion_falla:
         lineas.append(f"break {diag.funcion_falla}")

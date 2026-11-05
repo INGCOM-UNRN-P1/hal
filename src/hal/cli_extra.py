@@ -57,13 +57,13 @@ def script_reproductor(objetivo: Path, stdin: Optional[str] = None, args: Option
 
 @app.command("generate-reproducer")
 def generate_reproducer_cmd(
-    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo .c o binario que produce el crash."),
+    objetivo: Path = typer.Argument(..., callback=_existente, help="Archivo .c o binario que produce la falla."),
     output: Path = typer.Option(Path("reproducer.sh"), "--output", "-o", help="Ruta de destino del script bash."),
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
     args: Optional[str] = typer.Option(None, "--args", "-a", help="Argumentos de línea de comando."),
     json_output: bool = typer.Option(False, "--json", help="Emitir metadatos del script reproductor en JSON."),
 ) -> None:
-    """Genera un script autónomo en Bash para reproducir exactamente el crash en cualquier máquina."""
+    """Genera un script autónomo en Bash para reproducir exactamente la falla en cualquier máquina."""
     is_c = objetivo.suffix == ".c"
     try:
         script = script_reproductor(objetivo, stdin, args)
@@ -94,7 +94,7 @@ def replay_cmd(
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Datos de entrada estándar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir resultado del replay en formato JSON."),
 ) -> None:
-    """Ejecuta y navega paso a paso la traza forense del crash con renderizado Rich."""
+    """Ejecuta y navega paso a paso la traza forense de la falla con renderizado Rich."""
     diag = inspeccionar_fuente_o_binario(
         ruta_objetivo=objetivo,
         args=[],
@@ -115,7 +115,7 @@ def registers_cmd(
     stdin: Optional[str] = typer.Option(None, "--stdin", "-i", help="Entrada estándar."),
     json_output: bool = typer.Option(False, "--json", help="Emitir registros en JSON."),
 ) -> None:
-    """Muestra los valores de los registros de CPU (RAX, RSP, RIP, etc.) capturados durante el crash."""
+    """Muestra los valores de los registros de CPU (RAX, RSP, RIP, etc.) capturados durante la falla."""
     diag = inspeccionar_fuente_o_binario(ruta_objetivo=objetivo, stdin_data=stdin or "")
 
     if json_output:
@@ -126,7 +126,7 @@ def registers_cmd(
         console.print("[yellow]No se capturaron registros de CPU (se requiere GDB).[/yellow]")
         raise typer.Exit(code=0)
 
-    tabla = Table(title="🖥️ Registros de CPU en el Momento del Crash")
+    tabla = Table(title="🖥️ Registros de CPU en el Momento de la Falla")
     tabla.add_column("Registro", style="bold cyan")
     tabla.add_column("Valor Hex / Dirección", style="green")
 
@@ -291,7 +291,7 @@ def schema_cmd() -> None:
 def advice_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emitir consejos pedagógicos en formato JSON."),
 ) -> None:
-    """Muestra consejos pedagógicos y buenas prácticas defensivas para evitar segfaults."""
+    """Muestra consejos pedagógicos y buenas prácticas defensivas para evitar violaciones de segmento."""
     consejos = obtener_consejos()
     if json_output:
         print(json.dumps(consejos, indent=2, ensure_ascii=False))
