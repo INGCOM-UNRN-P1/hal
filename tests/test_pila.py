@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from hal.cli import app
 from hal.core.models import DiagnosticoCrash, StackFrame
-from hal.core.pila import _tamanio, caso_base_segun_sebastian, diagnosticar_pila, parsear_marcos
+from hal.core.pila import _tamanio, caso_base_segun_sebastian, diagnosticar_pila
 from hal.core.pista import diagnostico_en_pista
 from hal.core.taxonomia import clasificar
 
@@ -41,17 +41,14 @@ def limite_8_mib(monkeypatch):
     monkeypatch.setattr("hal.core.pila.limite_de_pila", lambda: (8 * MIB, "ulimit -s"))
 
 
-def test_parsear_marcos_y_tamanios():
-    assert parsear_marcos("x\nMARCOS=suma:32,suma:32,main:20000032\n") == [
-        ("suma", 32), ("suma", 32), ("main", 20000032)]
-    assert parsear_marcos("sin marcos") == []
+def test_tamanios():
     assert (_tamanio(8 * MIB), _tamanio(20000032), _tamanio(1536), _tamanio(40)) == (
         "8 MiB", "19,1 MiB", "1,5 KiB", "40 bytes")
 
 
 def test_recursion_sin_caso_base(monkeypatch, limite_8_mib):
     monkeypatch.setattr("hal.core.pila.caso_base_segun_sebastian", lambda fuente, funcion: False)
-    diag = diagnosticar_pila(_diag(), "PROFUNDIDAD=5000+\nMARCOS=suma:32,suma:32,suma:32")
+    diag = diagnosticar_pila(_diag(), "", profundidad=5000, marcos=[("suma", 32)] * 3)
     assert diag.pila["causa"] == "recursion-sin-caso-base" and diag.pila["marco_bytes"] == 32
     assert diag.pila["profundidad_maxima_estimada"] == 262144 and diag.pila["profundidad"] == 5000
     assert "no tiene caso base" in diag.causa_raiz_titulo and "32 bytes" in diag.explicacion
@@ -62,7 +59,7 @@ def test_recursion_sin_caso_base(monkeypatch, limite_8_mib):
 
 def test_caso_base_inalcanzable_muestra_los_argumentos(monkeypatch, limite_8_mib):
     monkeypatch.setattr("hal.core.pila.caso_base_segun_sebastian", lambda fuente, funcion: True)
-    diag = diagnosticar_pila(_diag(), "MARCOS=suma:48,suma:48")
+    diag = diagnosticar_pila(_diag(), "", marcos=[("suma", 48)] * 2)
     assert diag.pila["causa"] == "caso-base-inalcanzable" and "nunca llega a su caso base" in diag.causa_raiz_titulo
     assert "En las últimas llamadas: n = -103, -102, -101, -100." in diag.explicacion
     assert "n <= 0" in diag.accion_correctiva
@@ -73,20 +70,20 @@ def test_caso_base_inalcanzable_muestra_los_argumentos(monkeypatch, limite_8_mib
 
 def test_sin_sebastian_queda_el_conteo(monkeypatch, limite_8_mib):
     monkeypatch.setattr("hal.core.pila.caso_base_segun_sebastian", lambda fuente, funcion: None)
-    diag = diagnosticar_pila(_diag(), "MARCOS=suma:32")
+    diag = diagnosticar_pila(_diag(), "", marcos=[("suma", 32)])
     assert diag.pila["causa"] == "recursion-infinita" and diag.explicacion.startswith("Se agotó la pila.")
     assert "entran unas 262.144" in diag.explicacion
 
 
 def test_marco_gigante(limite_8_mib):
     diag = diagnosticar_pila(_diag(codigo_senal="SEGV_MAPERR", funcion_falla="main", frames=[]),
-                             "MARCOS=main:20000032")
+                             "", marcos=[("main", 20000032)])
     assert diag.codigo_senal == "STACK_FRAME_TOO_LARGE" and diag.pila["causa"] == "arreglo-local-demasiado-grande"
     assert "19,1 MiB" in diag.explicacion and "No es una recursión" in diag.explicacion
     assert "malloc" in diag.accion_correctiva
     assert clasificar(diag) == ("arreglo-local-demasiado-grande", "arreglos")
     # Un SIGSEGV común (marcos chicos) no cambia.
-    comun = diagnosticar_pila(_diag(codigo_senal="SEGV_MAPERR", causa_raiz_titulo="NULL"), "MARCOS=main:48")
+    comun = diagnosticar_pila(_diag(codigo_senal="SEGV_MAPERR", causa_raiz_titulo="NULL"), "", marcos=[("main", 48)])
     assert comun.causa_raiz_titulo == "NULL" and comun.pila is None
 
 

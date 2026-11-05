@@ -1,7 +1,7 @@
 """Tests unitarios para el motor de inspección y diagnóstico de HAL."""
 
 from hal.core.explainer import diagnosticar_crash
-from hal.core.inspector import parsear_salida_gdb, inspeccionar_fuente_o_binario
+from hal.core.inspector import diagnostico_desde_captura, inspeccionar_fuente_o_binario
 from hal.core.models import StackFrame
 
 
@@ -100,27 +100,27 @@ def test_crash_json_schema_version_and_compatibility():
 
 
 
-def test_parsea_marcos_de_gdb_con_rutas_de_windows():
-    # gdb de MSYS2 informa la ruta con la unidad: antes el archivo y la línea quedaban vacíos (N-ECO-22).
-    salida = ("===GDB_BACKTRACE===\n"
-              "#0  0x00007ff6a1b21456 in invertir_vector (vec=0x0, n=5) at C:/Users/alumno/tp/main.c:15\n"
-              "#1  0x00007ff6a1b214c2 in main () at C:/Users/alumno/tp/main.c:27\n"
-              "===GDB_LOCALS===\n")
-    diag = parsear_salida_gdb(salida)
+def _marco(nivel, funcion, archivo, linea, argumentos=None, locales=None):
+    return {"nivel": nivel, "funcion": funcion, "archivo": archivo, "linea": linea,
+            "argumentos": argumentos or {}, "variables_locales": locales or {}}
+
+
+def test_captura_con_rutas_de_windows():
+    # gdb de MSYS2 informa la ruta con la unidad (N-ECO-22); la captura la trae tal cual.
+    diag = diagnostico_desde_captura({"terminacion": "senal", "senal": "SIGSEGV", "frames": [
+        _marco(0, "invertir_vector", "C:/Users/alumno/tp/main.c", 15, {"vec": "0x0", "n": "5"}),
+        _marco(1, "main", "C:/Users/alumno/tp/main.c", 27),
+    ]})
     assert [(f.funcion, f.archivo, f.linea) for f in diag.frames[:2]] == [
         ("invertir_vector", "C:/Users/alumno/tp/main.c", 15),
         ("main", "C:/Users/alumno/tp/main.c", 27),
     ]
 
 
-def test_parsea_senal_gdb_thread_windows_y_variables_locales():
-    salida = ("Thread 1 received signal SIGSEGV, Segmentation fault.\n"
-              "===GDB_BACKTRACE===\n"
-              "#0  0x00007ff6a1b21456 in main () at C:/Users/alumno/tp/tp.c:5\n"
-              "        p = 0x0\n"
-              "        contador = 10\n"
-              "===GDB_LOCALS===\n")
-    diag = parsear_salida_gdb(salida)
+def test_captura_sin_siginfo_como_en_windows():
+    diag = diagnostico_desde_captura({"terminacion": "senal", "senal": "SIGSEGV", "si_code": None, "direccion": None,
+                                      "frames": [_marco(0, "main", "C:/Users/alumno/tp/tp.c", 5, None,
+                                                        {"p": "0x0", "contador": "10"})]})
     assert diag.tipo_senal == "SIGSEGV"
     assert diag.codigo_senal == "SEGV_MAPERR"
     assert diag.frames[0].variables_locales == {"p": "0x0", "contador": "10"}

@@ -16,7 +16,7 @@ from hal.core.fd_audit import auditar_descriptores_archivo
 from hal.core.models import StackFrame
 from hal.core.symbols import desofuscar_direccion
 from hal.core.valgrind_parser import parsear_log_valgrind
-from hal.core.inspector import inspeccionar_fuente_o_binario, parsear_struct_gdb
+from hal.core.inspector import inspeccionar_fuente_o_binario
 
 runner = CliRunner()
 
@@ -185,20 +185,6 @@ int main() {
         or "invalid pointer" in diag.salida_programa.lower()
         or diag.tipo_senal in ("SIGSEGV", "SIGABRT", "SIGTRAP")
     )
-
-
-def test_struct_parser_unit():
-    raw_gdb = '$1 = {id = 42, nombre = "Antigravity\\000\\000", score = 98.75, sig = 0x555555558000}'
-    fields = parsear_struct_gdb(raw_gdb)
-    assert "id" in fields
-    assert fields["id"]["valor"] == "42"
-    assert fields["id"]["tipo"] == "int"
-    assert fields["nombre"]["valor"] == '"Antigravity"'
-    assert "string" in fields["nombre"]["tipo"]
-    assert fields["score"]["valor"] == "98.75"
-    assert "double" in fields["score"]["tipo"] or "float" in fields["score"]["tipo"]
-    assert fields["sig"]["valor"] == "0x555555558000"
-    assert "hex" in fields["sig"]["tipo"]
 
 
 def test_struct_inspection_cli(tmp_path: Path):

@@ -35,6 +35,7 @@ def diagnosticar_crash(
     salida_prog: str = "",
     vasquez_injected: bool = False,
     profundidad_pila: Optional[int] = None,
+    pila_corrupta: bool = False,
 ) -> DiagnosticoCrash:
     """Genera un diagnóstico pedagógico completo a partir de los datos crudos del fallo."""
     archivo, linea, funcion, var_culpable, frame_falla = _extraer_frame_y_variable_culpable(frames)
@@ -85,7 +86,8 @@ def diagnosticar_crash(
 
     # 4. Ret Addr Buffer Overflow
     is_ret_overflow = (
-        any(s in texto_combinado for s in ("cannot access memory at address", "previous frame inner to this frame", "corrupted stack frame"))
+        pila_corrupta
+        or any(s in texto_combinado for s in ("cannot access memory at address", "previous frame inner to this frame", "corrupted stack frame"))
         or (direccion_memoria and any(direccion_memoria.lower().startswith(p) for p in ("0x41414141", "0x61616161", "0x78787878")))
     )
     if is_ret_overflow:

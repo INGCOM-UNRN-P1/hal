@@ -9,7 +9,7 @@ import shutil
 import pytest
 
 from hal.core.explainer import diagnosticar_puntero_a_local
-from hal.core.inspector import inspeccionar_fuente_o_binario, parsear_salida_gdb
+from hal.core.inspector import diagnostico_desde_captura, inspeccionar_fuente_o_binario
 from hal.core.models import DiagnosticoCrash
 
 con_gdb = pytest.mark.skipif(not (shutil.which("gcc") and shutil.which("gdb")), reason="hace falta gcc y gdb")
@@ -22,10 +22,12 @@ def _fuente(tmp_path, nombre, texto):
 
 
 def test_profundidad_de_la_pila_decide_la_recursion():
-    salida = ("Program received signal SIGSEGV, Segmentation fault.\n===GDB_PROFUNDIDAD===\nPROFUNDIDAD=5000+\n"
-              "===GDB_BACKTRACE===\n#0  0x401136 in suma (n=-261879) at rec.c:3\n"
-              "#1  0x40115e in suma (n=-261878) at rec.c:3\nCannot access memory at address 0x7ffe\n===GDB_LOCALS===\n")
-    diag = parsear_salida_gdb(salida)
+    marco = {"funcion": "suma", "archivo": "rec.c", "linea": 3, "variables_locales": {}}
+    diag = diagnostico_desde_captura({
+        "terminacion": "senal", "senal": "SIGSEGV", "si_code": 1, "direccion": "0x7ffe", "profundidad": 5000,
+        "frames": [{**marco, "nivel": 0, "argumentos": {"n": "-261879"}},
+                   {**marco, "nivel": 1, "argumentos": {"n": "-261878"}}],
+    })
     assert diag.codigo_senal == "STACK_OVERFLOW" and "más de 5000" in diag.explicacion and "'suma'" in diag.explicacion
 
 

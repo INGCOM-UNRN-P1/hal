@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
-import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -13,9 +14,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hal.core.explainer import diagnosticar_crash, diagnosticar_puntero_a_local, diagnosticar_sin_terminar
 from hal.core.models import DiagnosticoCrash, StackFrame
-from hal.core.pila import SCRIPT_MARCOS, diagnosticar_pila
+from hal.core.pila import diagnosticar_pila
 
 ES_WINDOWS = os.name == "nt"
+SCRIPT_CAPTURA = Path(__file__).parent.parent / "gdb_captura.py"
 
 
 def resolver_binario(ruta: Path) -> Path:
@@ -26,97 +28,6 @@ def resolver_binario(ruta: Path) -> Path:
         if con_exe.is_file():
             return con_exe
     return ruta
-
-
-def parsear_struct_gdb(texto: str) -> Dict[str, Any]:
-    """Parsea la representación de un struct emitida por GDB (print *var, print var o info locals).
-    
-    Retorna un diccionario estructurado de campos con su valor y tipo inferido.
-    """
-    idx_start = texto.find("{")
-    if idx_start == -1:
-        return {}
-
-    depth = 0
-    idx_end = -1
-    in_str = False
-    escape = False
-    for i in range(idx_start, len(texto)):
-        ch = texto[i]
-        if escape:
-            escape = False
-            continue
-        if ch == "\\":
-            escape = True
-            continue
-        if ch == '"':
-            in_str = not in_str
-            continue
-        if not in_str:
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    idx_end = i
-                    break
-    if idx_end == -1:
-        idx_end = len(texto)
-
-    inner = texto[idx_start + 1:idx_end]
-
-    chunks = []
-    curr = []
-    depth = 0
-    in_str = False
-    escape = False
-    for ch in inner:
-        if escape:
-            escape = False
-            curr.append(ch)
-            continue
-        if ch == "\\":
-            escape = True
-            curr.append(ch)
-            continue
-        if ch == '"':
-            in_str = not in_str
-            curr.append(ch)
-            continue
-        if not in_str:
-            if ch in ("{", "("):
-                depth += 1
-            elif ch in ("}", ")"):
-                depth -= 1
-            elif ch == "," and depth == 0:
-                chunks.append("".join(curr).strip())
-                curr = []
-                continue
-        curr.append(ch)
-    if curr:
-        chunks.append("".join(curr).strip())
-
-    campos: Dict[str, Any] = {}
-    for chunk in chunks:
-        if "=" in chunk:
-            k, v = chunk.split("=", 1)
-            k = k.strip()
-            v = v.strip()
-            if v.startswith('"'):
-                v = re.sub(r'\\\\(?:[0-9]+|0)', '', v).replace(r'\000', '').replace(r'\0', '').replace('\x00', '')
-            tipo = "valor"
-            if v.startswith('"'):
-                tipo = "string / char[]"
-            elif v.startswith("0x") or v in ("(nil)", "NULL"):
-                tipo = "puntero / hex"
-            elif re.match(r"^-?\d+$", v):
-                tipo = "int"
-            elif re.match(r"^-?\d+\.\d+", v):
-                tipo = "float / double"
-            elif v.startswith("{"):
-                tipo = "struct anidado"
-            campos[k] = {"valor": v, "tipo": tipo}
-    return campos
 
 
 def obtener_libreria_vasquez() -> Optional[Path]:
@@ -219,92 +130,44 @@ def ejecutar_con_gdb(
     timeout_segundos: int = 5,
     struct_nombre: Optional[str] = None,
     env_vars: Optional[Dict[str, str]] = None,
-) -> Tuple[int, str, str]:
-    """Ejecuta el binario bajo GDB en modo batch y extrae información forense del crash."""
+) -> Tuple[int, str, str, Optional[Dict[str, Any]]]:
+    """Ejecuta el binario bajo gdb: (retorno, stdout, stderr, captura).
+
+    La captura es el JSON de `hal/gdb_captura.py`; stdout y stderr son del programa. Sin gdb, o con
+    un gdb sin Python, lo ejecuta directo y la captura es None.
+    """
     gdb_bin = gdb_path or shutil.which("gdb") or "gdb"
     if not shutil.which(gdb_bin):
-        # Fallback sin GDB
-        return ejecutar_directo(binario, args, stdin_data, timeout_segundos)
+        return (*ejecutar_directo(binario, args, stdin_data, timeout_segundos), None)
 
-    with tempfile.NamedTemporaryFile("w", suffix=".gdb", delete=False) as f:
-        gdb_script = f.name
-        f.write("set pagination off\n")
-        f.write("set confirm off\n")
-        if env_vars:
-            for k, v in env_vars.items():
-                f.write(f"set environment {k} {v}\n")
-        args_str = " ".join(f'"{a}"' for a in (args or []))
-        if args_str:
-            f.write(f"set args {args_str}\n")
-        f.write("run\n")
-        # Profundidad de la pila con un tope: con una recursión infinita hay cientos de miles de
-        # marcos y `backtrace full` (o `bt -1`) tardaba más que el timeout.
-        f.write("echo ===GDB_PROFUNDIDAD===\n")
-        f.write("python\n")
-        f.write("try:\n")
-        f.write("    marco = gdb.newest_frame()\n")
-        f.write("    n = 0\n")
-        f.write("    while marco is not None and n < 5000:\n")
-        f.write("        n += 1\n")
-        f.write("        marco = marco.older()\n")
-        f.write("    print('PROFUNDIDAD=%d%s' % (n, '+' if marco is not None else ''))\n")
-        f.write("except Exception:\n")
-        f.write("    pass\n")
-        f.write("end\n")
-        # Bytes de cada marco, para distinguir recursión, marco gigante y búfer local (core/pila.py).
-        f.write(SCRIPT_MARCOS)
-        if struct_nombre:
-            clean_s = struct_nombre.strip().lstrip("*")
-            f.write("echo ===GDB_STRUCT_BEGIN===\n")
-            f.write("echo \\n\n")
-            f.write("python\n")
-            f.write("try:\n")
-            f.write(f"    v = gdb.parse_and_eval('{clean_s}')\n")
-            f.write("    if v.type.code == gdb.TYPE_CODE_PTR:\n")
-            f.write("        print(v.dereference())\n")
-            f.write("    else:\n")
-            f.write("        print(v)\n")
-            f.write("except Exception:\n")
-            f.write(f"    try:\n        gdb.execute('print {struct_nombre}')\n    except Exception: pass\n")
-            f.write("end\n")
-            f.write("echo ===GDB_STRUCT_END===\n")
-            f.write("echo \\n\n")
-        f.write("echo ===GDB_INFO_PROGRAM===\n")
-        f.write("info program\n")
-        f.write("echo ===GDB_BACKTRACE===\n")
-        f.write("backtrace full 30\n")
-        f.write("echo ===GDB_LOCALS===\n")
-        f.write("info locals\n")
-        f.write("echo ===GDB_REGISTERS===\n")
-        f.write("info registers\n")
-        f.write("quit\n")
-
-    try:
-        cmd = [
-            gdb_bin,
-            "--batch",
-            "-x",
-            gdb_script,
-            str(binario.resolve()),
-        ]
-        full_env = os.environ.copy()
-        if env_vars:
-            full_env.update(env_vars)
+    with tempfile.TemporaryDirectory(prefix="hal-captura-") as temporal:
+        carpeta = Path(temporal)
+        resultado = carpeta / "captura.json"
+        config = carpeta / "config.json"
+        config.write_text(json.dumps({
+            "argumentos": " ".join(f'"{a}"' for a in (args or [])),
+            "entorno": env_vars or {},
+            "struct": struct_nombre.strip().lstrip("*") if struct_nombre else None,
+            "resultado": str(resultado),
+        }), encoding="utf-8")
+        # El binario es del estudiante: nada de cargar los scripts que pudiera traer.
+        cmd = [gdb_bin, "-nx", "-batch", "-iex", "set auto-load off", "-x", str(SCRIPT_CAPTURA), str(binario.resolve())]
         try:
             res = subprocess.run(
                 cmd,
                 input=stdin_data,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=timeout_segundos + 5,
-                env=full_env,
+                env={**os.environ, **(env_vars or {}), "HAL_CAPTURA_CONFIG": str(config)},
             )
         except subprocess.TimeoutExpired:
-            return 124, "", "Tiempo de ejecución excedido (Timeout)."
-        return res.returncode, res.stdout, res.stderr
-    finally:
-        if os.path.exists(gdb_script):
-            os.remove(gdb_script)
+            return 124, "", "Tiempo de ejecución excedido (Timeout).", None
+        try:
+            return res.returncode, res.stdout, res.stderr, json.loads(resultado.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return (*ejecutar_directo(binario, args, stdin_data, timeout_segundos), None)
 
 
 def ejecutar_directo(
@@ -341,122 +204,36 @@ def ejecutar_directo(
         return 1, "", str(e)
 
 
-def parsear_salida_gdb(
-    gdb_stdout: str,
-    gdb_stderr: str = "",
-    struct_nombre: Optional[str] = None,
-    vasquez_injected: bool = False,
-) -> DiagnosticoCrash:
-    """Parsea las secciones estructuradas emitidas por GDB."""
-    senal = "SIGSEGV"
-    codigo_senal = None
-    direccion = None
-    frames: List[StackFrame] = []
-    salida_prog = ""
+# `si_code` de cada señal (siginfo.h de Linux).
+CODIGOS_DE_SENAL = {
+    "SIGSEGV": {1: "SEGV_MAPERR", 2: "SEGV_ACCERR"},
+    "SIGBUS": {1: "BUS_ADRALN", 2: "BUS_ADRERR", 3: "BUS_OBJERR"},
+    "SIGFPE": {1: "FPE_INTDIV", 2: "FPE_INTOVF", 3: "FPE_FLTDIV", 4: "FPE_FLTOVF", 5: "FPE_FLTUND", 6: "FPE_FLTRES",
+               7: "FPE_FLTINV", 8: "FPE_FLTSUB"},
+}
+# Cómo termina en Windows un programa que falla: no hay señales, hay excepciones.
+EXCEPCIONES_WINDOWS = {0xC0000005: "SIGSEGV", 0xC00000FD: "SIGSEGV", 0xC0000094: "SIGFPE", 0xC000001D: "SIGILL"}
 
-    # 1. Detectar señal y dirección
-    m_sig = re.search(r"(?:Program|Thread\s+\d+(?:\s+\"[^\"]+\")?)\s+received signal\s+(\w+)(?:[,\:]\s*([^.\n]+))?", gdb_stdout)
-    if not m_sig:
-        m_sig = re.search(r"received signal\s+(\w+)(?:[,\:]\s*([^.\n]+))?", gdb_stdout)
-    if m_sig:
-        senal = m_sig.group(1).strip()
-        codigo_senal = m_sig.group(2).strip() if m_sig.group(2) else None
+SIN_TRAZA = ("Sin gdb no hay traza: hal sabe cómo terminó el programa, pero no en qué línea. "
+             "Con `hal doctor` ves qué falta instalar.")
 
-    m_prof = re.search(r"PROFUNDIDAD=(\d+)(\+?)", gdb_stdout)
-    profundidad = int(m_prof.group(1)) if m_prof else None
 
-    m_addr = re.search(r"address (0x[0-9a-fA-F]+)", gdb_stdout) or re.search(r"at (0x[0-9a-fA-F]+)", gdb_stdout)
-    if m_addr:
-        direccion = m_addr.group(1)
+def _terminacion_sin_gdb(retorno: int) -> Dict[str, Any]:
+    """Lo que se sabe de un programa ejecutado directo: sólo cómo terminó."""
+    numero = retorno if retorno < 0 else retorno - 128 if 128 < retorno <= 192 else None
+    if retorno in EXCEPCIONES_WINDOWS:
+        return {"terminacion": "senal", "senal": EXCEPCIONES_WINDOWS[retorno]}
+    if numero is not None:
+        try:
+            return {"terminacion": "senal", "senal": signal.Signals(abs(numero)).name}
+        except ValueError:
+            pass
+    return {"terminacion": "salida", "codigo_salida": retorno}
 
-    # 2. Parsear Backtrace Full
-    bt_section = ""
-    if "===GDB_BACKTRACE===" in gdb_stdout:
-        partes = gdb_stdout.split("===GDB_BACKTRACE===")
-        bt_section = partes[1].split("===GDB_LOCALS===")[0]
-    else:
-        bt_section = gdb_stdout
 
-    # La ruta puede llevar la unidad (gdb de MSYS2: «at C:/Users/…/tp.c:12»), N-ECO-22.
-    frame_re = re.compile(r"^#(\d+)\s+(?:0x[0-9a-fA-F]+\s+in\s+)?([a-zA-Z0-9_<>]+)\s*\((.*?)\)(?:\s+at\s+((?:[A-Za-z]:)?[^:]+):(\d+))?", re.MULTILINE)
-    matches = list(frame_re.finditer(bt_section))
-
-    for i, match in enumerate(matches):
-        nivel = int(match.group(1))
-        func_name = match.group(2)
-        raw_args = match.group(3) or ""
-        archivo = match.group(4)
-        linea = int(match.group(5)) if match.group(5) else None
-
-        # Parsear argumentos
-        args_dict = {}
-        if raw_args.strip() and raw_args.strip() != "void":
-            for arg_part in raw_args.split(","):
-                if "=" in arg_part:
-                    k, v = arg_part.split("=", 1)
-                    args_dict[k.strip()] = v.strip()
-
-        # Parsear variables locales del frame (entre este match y el siguiente)
-        start_idx = match.end()
-        end_idx = matches[i + 1].start() if i + 1 < len(matches) else len(bt_section)
-        frame_body = bt_section[start_idx:end_idx]
-
-        locals_dict = {}
-        for line in frame_body.splitlines():
-            line_str = line.strip()
-            if "=" in line_str and not line_str.startswith("#"):
-                k, v = line_str.split("=", 1)
-                k = k.strip()
-                if k.isidentifier():
-                    locals_dict[k] = v.strip()
-
-        frames.append(StackFrame(
-            nivel=nivel,
-            funcion=func_name,
-            archivo=archivo,
-            linea=linea,
-            argumentos=args_dict,
-            variables_locales=locals_dict,
-        ))
-
-    # Parsear registros de CPU
-    registros: Dict[str, str] = {}
-    if "===GDB_REGISTERS===" in gdb_stdout:
-        reg_section = gdb_stdout.split("===GDB_REGISTERS===")[1]
-        for line in reg_section.splitlines():
-            partes = line.strip().split()
-            if len(partes) >= 2 and not line.startswith("="):
-                reg_name = partes[0]
-                reg_val = partes[1]
-                registros[reg_name] = reg_val
-
-    # Parsear structs (Mejora 22)
-    campos_struct: Optional[Dict[str, Any]] = None
-    struct_nom = struct_nombre
-    if "===GDB_STRUCT_BEGIN===" in gdb_stdout and "===GDB_STRUCT_END===" in gdb_stdout:
-        struct_section = gdb_stdout.split("===GDB_STRUCT_BEGIN===")[1].split("===GDB_STRUCT_END===")[0]
-        parsed_fields = parsear_struct_gdb(struct_section)
-        if parsed_fields:
-            campos_struct = parsed_fields
-
-    # Fallback: buscar struct en info locals si no se detectó
-    if not campos_struct and "===GDB_LOCALS===" in gdb_stdout:
-        locals_section = gdb_stdout.split("===GDB_LOCALS===")[1].split("===GDB_REGISTERS===")[0]
-        for l_line in locals_section.splitlines():
-            l_line_str = l_line.strip()
-            if "=" in l_line_str and "{" in l_line_str and "}" in l_line_str:
-                v_name, _ = l_line_str.split("=", 1)
-                v_name = v_name.strip()
-                if v_name.isidentifier():
-                    parsed = parsear_struct_gdb(l_line_str)
-                    if parsed:
-                        campos_struct = parsed
-                        if not struct_nom:
-                            struct_nom = v_name
-                        break
-
-    # Si no hubo señal detectada pero el proceso terminó con éxito
-    if "exited normally" in gdb_stdout or "exited with code 0" in gdb_stdout:
+def _sin_fallas(codigo: Optional[int]) -> DiagnosticoCrash:
+    """El programa terminó por su cuenta, sin ninguna señal."""
+    if not codigo:
         return DiagnosticoCrash(
             tipo_senal="NINGUNA",
             codigo_senal="EXIT_SUCCESS",
@@ -464,27 +241,52 @@ def parsear_salida_gdb(
             causa_raiz_titulo="Ejecución Exitosa (Sin Fallos)",
             explicacion="El programa ejecutó y finalizó normalmente con código de retorno 0 sin registrar señales de fallo.",
             accion_correctiva="No se requiere ninguna corrección.",
-            frames=frames,
-            registros=registros,
-            salida_programa=salida_prog,
             es_crash=False,
-            campos_struct=campos_struct,
-            struct_nombre=struct_nom,
         )
+    return DiagnosticoCrash(
+        tipo_senal="NINGUNA",
+        codigo_senal="EXIT_FAILURE",
+        direccion_memoria=None,
+        causa_raiz_titulo=f"El programa terminó con código de retorno {codigo}",
+        explicacion=(f"El programa no se cayó: terminó por su cuenta y devolvió {codigo}, que por convención "
+                     "significa que algo salió mal."),
+        accion_correctiva="Buscá el `return` de `main` o el `exit` que devuelve ese valor y revisá qué lo provoca.",
+        es_crash=False,
+    )
 
+
+def diagnostico_desde_captura(
+    captura: Dict[str, Any],
+    salida_programa: str = "",
+    struct_nombre: Optional[str] = None,
+    vasquez_injected: bool = False,
+) -> DiagnosticoCrash:
+    """El diagnóstico a partir de la captura de `hal/gdb_captura.py`.
+
+    `salida_programa` es lo que el programa escribió: ahí están los mensajes de la biblioteca
+    («free(): invalid pointer», «stack smashing detected») y los de vasquez.
+    """
+    if captura["terminacion"] == "salida":
+        return _sin_fallas(captura.get("codigo_salida"))
+
+    frames = [StackFrame(**f) for f in captura.get("frames", [])]
+    senal = captura["senal"]
+    profundidad = captura.get("profundidad")
     diag = diagnosticar_crash(
         senal=senal,
-        codigo_senal=codigo_senal,
-        direccion_memoria=direccion,
+        codigo_senal=CODIGOS_DE_SENAL.get(senal, {}).get(captura.get("si_code") or 0),
+        direccion_memoria=captura.get("direccion"),
         frames=frames,
-        gdb_output=gdb_stdout + "\n" + gdb_stderr,
-        salida_prog=salida_prog,
+        gdb_output=salida_programa,
         vasquez_injected=vasquez_injected,
         profundidad_pila=profundidad,
+        pila_corrupta=bool(captura.get("pila_corrupta")),
     )
-    diag.registros = registros
-    diag.campos_struct = campos_struct
-    diag.struct_nombre = struct_nom
+    diag.registros = captura.get("registros", {})
+    struct = captura.get("struct")
+    if struct:
+        diag.campos_struct = struct["campos"]
+    diag.struct_nombre = struct["nombre"] if struct else struct_nombre
     return diag
 
 
@@ -571,7 +373,7 @@ def inspeccionar_fuente_o_binario(
             binario = bin_comp
 
         advertencias = err if ruta_objetivo.suffix in (".c", ".cpp", ".cc") else ""
-        rc, stdout, stderr = ejecutar_con_gdb(
+        rc, stdout, stderr, captura = ejecutar_con_gdb(
             binario,
             args=args,
             stdin_data=stdin_data,
@@ -579,18 +381,27 @@ def inspeccionar_fuente_o_binario(
             struct_nombre=struct_nombre,
             env_vars=env_vars if env_vars else None,
         )
-        if rc == 124 and not stdout:
+        if rc == 124 and captura is None:
             return diagnosticar_sin_terminar()
-        diagnostico = parsear_salida_gdb(
-            stdout,
-            stderr,
+        salida_programa = stdout + "\n" + stderr
+        diagnostico = diagnostico_desde_captura(
+            captura or _terminacion_sin_gdb(rc),
+            salida_programa,
             struct_nombre=struct_nombre,
             vasquez_injected=vasquez_activo,
         )
+        if captura is None and diagnostico.es_crash:
+            diagnostico.explicacion = f"{diagnostico.explicacion.rstrip()}\n\n{SIN_TRAZA}"
         if diagnostico.es_crash:
             diagnostico = diagnosticar_puntero_a_local(diagnostico, advertencias)
             fuente = ruta_objetivo if ruta_objetivo.suffix == ".c" else None
-            diagnostico = diagnosticar_pila(diagnostico, stdout + "\n" + stderr, fuente)
+            diagnostico = diagnosticar_pila(
+                diagnostico,
+                salida_programa,
+                fuente,
+                profundidad=(captura or {}).get("profundidad"),
+                marcos=[(f, b) for f, b in (captura or {}).get("marcos_bytes", [])],
+            )
 
         # Si compilamos el fuente, ajustar el nombre de archivo en los frames
         if ruta_objetivo.suffix in (".c", ".cpp", ".cc") and diagnostico.frames:

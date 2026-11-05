@@ -11,16 +11,14 @@ Tres fallas que el estudiante ve igual («se rompió la pila») y que se corrige
 - **Búfer local desbordado**: la pila no se llenó; se escribió más allá de un arreglo local y se pisó el
   resto del marco de activación (el canario de `-fstack-protector` o la dirección de retorno).
 
-El script de gdb del inspector imprime `MARCOS=funcion:bytes,…` (los primeros marcos, de adentro hacia
-afuera); el tamaño de cada uno es la distancia entre su `$sp` y el del marco que lo llamó (en el más
-externo, hasta la dirección del marco que informa `info frame`).
+`hal/gdb_captura.py` mide los primeros marcos, de adentro hacia afuera: el tamaño de cada uno es la
+distancia entre su `$sp` y el del marco que lo llamó.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 from collections import Counter
@@ -31,31 +29,6 @@ from hal.core.models import DiagnosticoCrash
 
 PILA_WINDOWS = 1024 * 1024
 PILA_POR_DEFECTO = 8 * 1024 * 1024
-
-# Código de gdb (Python) que agrega el inspector después de `run`.
-SCRIPT_MARCOS = """\
-python
-try:
-    import re as _re
-    _marco, _partes = gdb.newest_frame(), []
-    while _marco is not None and len(_partes) < 40:
-        _sp = int(_marco.read_register('sp'))
-        _anterior = _marco.older()
-        if _anterior is not None:
-            _tam = int(_anterior.read_register('sp')) - _sp
-        else:
-            _marco.select()
-            _m = _re.search(r'frame at (0x[0-9a-f]+)', gdb.execute('info frame', to_string=True))
-            _tam = int(_m.group(1), 16) - _sp if _m else 0
-        _partes.append('%s:%d' % (_marco.name() or '??', _tam))
-        _marco = _anterior
-    gdb.newest_frame().select()
-    print('MARCOS=' + ','.join(_partes))
-except Exception:
-    pass
-end
-"""
-
 
 def limite_de_pila() -> Tuple[int, str]:
     """(bytes, de dónde sale el dato): el programa hereda el límite de hal a través de gdb."""
@@ -70,18 +43,6 @@ def limite_de_pila() -> Tuple[int, str]:
     except (ImportError, ValueError, OSError):
         pass
     return PILA_POR_DEFECTO, "8 MiB, el límite de pila habitual en Linux"
-
-
-def parsear_marcos(salida_gdb: str) -> List[Tuple[str, int]]:
-    m = re.search(r"^MARCOS=(.*)$", salida_gdb, re.MULTILINE)
-    if not m:
-        return []
-    marcos = []
-    for parte in m.group(1).split(","):
-        funcion, _, tam = parte.rpartition(":")
-        if funcion and tam.lstrip("-").isdigit():
-            marcos.append((funcion, int(tam)))
-    return marcos
 
 
 def _miles(n: int) -> str:
@@ -200,6 +161,7 @@ def _marco_gigante(diag: DiagnosticoCrash, funcion: str, tam: int, limite: int, 
         "verificando que no devuelva NULL y liberándolo con `free`).\n"
         "2. O declaralo `static` o global, si su tamaño es fijo: así no vive en la pila.")
     diag.funcion_falla = diag.funcion_falla or funcion
+    diag.es_wild_pointer = False  # la dirección parecía inválida porque cae fuera de la pila
     diag.pila = {"causa": "arreglo-local-demasiado-grande", "funcion": funcion, "marco_bytes": tam,
                  "limite_bytes": limite}
 
@@ -224,20 +186,20 @@ def _bufer_local(diag: DiagnosticoCrash, canario: bool) -> None:
     diag.pila = {"causa": "desborde-de-buffer-local", "funcion": diag.funcion_falla, "canario": canario}
 
 
-def diagnosticar_pila(diag: DiagnosticoCrash, salida_gdb: str, fuente: Optional[Path] = None,
-                      profundidad: Optional[int] = None) -> DiagnosticoCrash:
-    """Reescribe el diagnóstico cuando la falla es de la pila (ver el docstring del módulo)."""
+def diagnosticar_pila(diag: DiagnosticoCrash, salida_programa: str, fuente: Optional[Path] = None,
+                      profundidad: Optional[int] = None,
+                      marcos: Optional[List[Tuple[str, int]]] = None) -> DiagnosticoCrash:
+    """Reescribe el diagnóstico cuando la falla es de la pila (ver el docstring del módulo).
+
+    `marcos` son los (función, bytes) que midió gdb, de adentro hacia afuera."""
     if not diag.es_crash:
         return diag
-    if profundidad is None:
-        m = re.search(r"PROFUNDIDAD=(\d+)", salida_gdb)
-        profundidad = int(m.group(1)) if m else None
-    texto = salida_gdb.lower()
-    canario = "stack smashing detected" in texto or any(f.funcion == "__stack_chk_fail" for f in diag.frames)
+    marcos = marcos or []
+    canario = ("stack smashing detected" in salida_programa.lower()
+               or any(f.funcion == "__stack_chk_fail" for f in diag.frames))
     if canario or diag.codigo_senal == "RET_ADDR_CORRUPTED":
         _bufer_local(diag, canario)
         return diag
-    marcos = parsear_marcos(salida_gdb)
     limite, origen = limite_de_pila()
     if diag.codigo_senal == "STACK_OVERFLOW":
         _recursion(diag, marcos, profundidad, limite, origen, fuente)

@@ -43,6 +43,14 @@ Para instalar la herramienta de forma global y aislada en el sistema mediante `u
 uv tool install "hal[ecosistema] @ git+https://github.com/INGCOM-UNRN-P1/hal"
 ```
 
+### Cómo se captura una falla
+
+hal ejecuta el programa bajo gdb con un script de la API Python de gdb (`src/hal/gdb_captura.py`), que deja señal, dirección de la falla, marcos, variables, registros y structs en un JSON. La salida del programa queda aparte: lo que imprima no cambia el diagnóstico.
+
+Sin gdb, o con un gdb sin Python, hal ejecuta el programa directo: sabe cómo terminó, pero no en qué línea, y lo dice en la explicación. `hal doctor` informa los dos casos.
+
+Un programa que termina por su cuenta con un código distinto de cero no es una falla: `codigo_senal` vale `EXIT_FAILURE` y `es_crash`, `false`.
+
 ### Verificación de Instalación
 Ejecutá el comando `doctor` para constatar que todas las dependencias y binarios requeridos estén presentes y operativos:
 ```bash
