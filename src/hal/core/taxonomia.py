@@ -20,6 +20,7 @@ _POR_CODIGO: Dict[str, Tuple[str, str]] = {
     "RET_ADDR_CORRUPTED": ("desborde-de-buffer", "arreglos"),
     "STACK_FRAME_TOO_LARGE": ("arreglo-local-demasiado-grande", "arreglos"),
     "SIN_TERMINAR": ("sin-terminar", "control"),
+    "EXIT_FAILURE": ("codigo-de-error", "control"),
 }
 _POR_SENAL: Dict[str, Tuple[str, str]] = {
     "SIGFPE": ("division-por-cero", "numeros"),
@@ -48,11 +49,13 @@ def clasificar(diag: DiagnosticoCrash) -> Tuple[str, str]:
 
 
 def hallazgos(diag: DiagnosticoCrash) -> List[Dict[str, Any]]:
-    """Un hallazgo si hubo un crash o el programa no terminó; ninguno si terminó bien."""
-    if not diag.es_crash and diag.codigo_senal != "SIN_TERMINAR":
+    """Un hallazgo si hubo un crash, si el programa no terminó o si devolvió un código de error;
+    ninguno si terminó bien. El código de error es una advertencia: `return 1` puede ser lo correcto
+    (argumentos inválidos, un archivo que no está)."""
+    if not diag.es_crash and not diag.termino_con_error and diag.codigo_senal != "SIN_TERMINAR":
         return []
     codigo, categoria = clasificar(diag)
-    h = hallazgo("hal", codigo, categoria, "error", diag.causa_raiz_titulo,
+    h = hallazgo("hal", codigo, categoria, "advertencia" if diag.termino_con_error else "error", diag.causa_raiz_titulo,
                  archivo=ruta_relativa(diag.archivo_falla), linea=diag.linea_falla or None,
                  sugerencia=diag.accion_correctiva or None)
     # El porqué en español (lo que jonesy muestra con F1), clave opcional de la forma común.

@@ -49,7 +49,7 @@ hal ejecuta el programa bajo gdb con un script de la API Python de gdb (`src/hal
 
 Sin gdb, o con un gdb sin Python, hal ejecuta el programa directo: sabe cómo terminó, pero no en qué línea, y lo dice en la explicación. `hal doctor` informa los dos casos.
 
-Un programa que termina por su cuenta con un código distinto de cero no es una falla: `codigo_senal` vale `EXIT_FAILURE` y `es_crash`, `false`.
+Un programa que termina por su cuenta con un código distinto de cero no se cayó, pero tampoco terminó bien: `codigo_senal` vale `EXIT_FAILURE`, `es_crash` sigue en `false`, hal sale con `1` y el JSON trae un hallazgo `codigo-de-error` como advertencia.
 
 ### Verificación de Instalación
 Ejecutá el comando `doctor` para constatar que todas las dependencias y binarios requeridos estén presentes y operativos:

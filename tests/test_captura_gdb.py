@@ -254,3 +254,24 @@ def test_siginfo_de_una_senal_sin_direccion(monkeypatch):
     captura, _ = _script_con_gdb_falso(monkeypatch, lambda _: pytest.fail("no hace falta leerlo"))
 
     assert captura.siginfo("SIGABRT") == (None, None)
+
+
+@con_gdb
+@pytest.mark.parametrize("retorno, salida_de_hal", [(0, 0), (2, 1)])
+def test_hal_devuelve_el_resultado_del_programa(tmp_path, retorno, salida_de_hal):
+    import json
+
+    from typer.testing import CliRunner
+
+    from hal.cli import app
+
+    fuente = tmp_path / "prog.c"
+    fuente.write_text(f"int main(void) {{\n    return {retorno};\n}}\n", encoding="utf-8")
+
+    res = CliRunner().invoke(app, ["run", str(fuente), "--json"])
+
+    assert res.exit_code == salida_de_hal
+    datos = json.loads(res.stdout)
+    assert datos["es_crash"] is False
+    assert [(h["codigo"], h["severidad"]) for h in datos["hallazgos"]] == (
+        [("codigo-de-error", "advertencia")] if retorno else [])

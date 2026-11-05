@@ -21,12 +21,13 @@ err_console = Console(stderr=True)
 
 
 def _codigo_salida(diag: DiagnosticoCrash) -> int:
-    """1 si hubo un crash o HAL no pudo diagnosticar (p. ej., el .c no compila); 0 si la ejecución fue limpia.
+    """1 si hubo un crash, si el programa devolvió un código distinto de cero o si HAL no pudo
+    diagnosticar (p. ej., el .c no compila); 0 si la ejecución fue limpia.
 
     Antes un diagnóstico de error («Fallo de Compilación con GCC») salía con 0, como una ejecución
     exitosa, y un script o un CI no podía distinguirlos (N-ECO-18).
     """
-    return 1 if diag.es_crash or diag.tipo_senal == "ERROR" else 0
+    return 1 if diag.es_crash or diag.termino_con_error or diag.tipo_senal == "ERROR" else 0
 
 
 def _renderizar_diagnostico_rich(
