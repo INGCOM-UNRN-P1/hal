@@ -43,6 +43,13 @@ def _renderizar_diagnostico_rich(
                 title="Error en HAL",
                 border_style="red",
             ))
+        elif diag.termino_con_error:
+            console.print(Panel(
+                f"[bold yellow]⚠ {diag.causa_raiz_titulo}[/bold yellow]\n\n{diag.explicacion}\n\n"
+                f"[dim]{diag.accion_correctiva}[/dim]",
+                title="Terminó con Error",
+                border_style="yellow",
+            ))
         else:
             console.print(Panel(
                 f"[bold green]✓ {diag.causa_raiz_titulo}[/bold green]\n\n{diag.explicacion}",
@@ -200,7 +207,9 @@ def generar_seccion_markdown(diag: DiagnosticoCrash) -> str:
     if diag.tipo_senal == "ERROR":  # no se pudo ejecutar (p. ej., el .c no compila): no es una ejecución exitosa
         lines.append(f"- **Estado:** ✗ {diag.causa_raiz_titulo}: {diag.explicacion}\n")
         return "\n".join(lines)
-    if not diag.es_crash:
+    if diag.termino_con_error:
+        lines.append(f"- **Estado:** ⚠ {diag.causa_raiz_titulo}: {diag.explicacion}\n")
+    elif not diag.es_crash:
         lines.append("- **Estado:** ✓ Ejecución Exitosa (Sin caídas ni violaciones de memoria)\n")
         lines.append("> [!TIP]\n> **Proceso Estable:** El programa finalizó correctamente sin arrojar señales fatales ni desbordamiento de pila.\n")
     else:

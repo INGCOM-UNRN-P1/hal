@@ -1,7 +1,11 @@
 """El diagnóstico a partir de la API Python de gdb (ola R3). Cada caso corre un programa real."""
 
+import importlib
+import os
 import shutil
 import subprocess
+import sys
+import types
 
 import pytest
 
@@ -11,6 +15,8 @@ from hal.core.inspector import _terminacion_sin_gdb, diagnostico_desde_captura, 
 
 con_gdb = pytest.mark.skipif(not (shutil.which("gcc") and shutil.which("gdb")), reason="hace falta gcc y gdb")
 con_gcc = pytest.mark.skipif(shutil.which("gcc") is None, reason="hace falta gcc")
+# Dependen de cómo arma la pila gcc en Linux (canario, recursión de main, marco de main).
+solo_linux = pytest.mark.skipif(os.name == "nt", reason="la pila de MinGW se comporta distinto")
 
 
 def _correr(tmp_path, codigo, **opciones):
@@ -115,6 +121,7 @@ def test_argumentos_y_entrada_llegan_al_programa(tmp_path):
     assert "7" in diag.causa_raiz_titulo
 
 
+@solo_linux
 @con_gdb
 @pytest.mark.parametrize("proteccion", ["-fstack-protector-strong", "-fno-stack-protector"])
 def test_desborde_de_un_arreglo_local(tmp_path, proteccion):
@@ -134,6 +141,7 @@ def test_desborde_de_un_arreglo_local(tmp_path, proteccion):
     assert diag.pila["canario"] == (proteccion == "-fstack-protector-strong")
 
 
+@solo_linux
 @con_gdb
 def test_marco_de_main_demasiado_grande(tmp_path):
     diag = _correr(tmp_path, "int main(void) {\n    volatile int v[20000000];\n    v[0] = 1;\n    v[19999999] = 2;\n"
@@ -141,6 +149,7 @@ def test_marco_de_main_demasiado_grande(tmp_path):
     assert diag.codigo_senal == "STACK_FRAME_TOO_LARGE" and not diag.es_wild_pointer
 
 
+@solo_linux
 @con_gdb
 def test_recursion_de_main_consigo_misma(tmp_path):
     diag = _correr(tmp_path, "int main(int argc, char **argv) {\n    return main(argc + 1, argv) + 1;\n}\n")
@@ -194,3 +203,54 @@ def test_doctor_detecta_gdb_sin_python(monkeypatch):
     monkeypatch.setattr("hal.core.doctor.gdb_tiene_python", lambda gdb: False)
     chequeo = next(c for c in obtener_estado_doctor()["chequeos"] if c["nombre"] == "gdb (Python)")
     assert not chequeo["ok"] and "soporte de Python" in chequeo["detalle"]
+
+
+@con_gdb
+def test_el_codigo_de_error_no_se_presenta_como_exito(tmp_path, capsys):
+    from hal.core.exporter import exportar_html
+    from hal.core.resumen import resumir
+    from hal.presentacion import _renderizar_diagnostico_rich, generar_seccion_markdown
+
+    diag = _correr(tmp_path, "int main(void) {\n    return 2;\n}\n")
+
+    assert "TERMINÓ CON ERROR" in exportar_html(diag) and "EJECUCIÓN EXITOSA" not in exportar_html(diag)
+    assert "código de retorno 2" in resumir(diag)["que_paso"]
+    assert "Ejecución Exitosa" not in generar_seccion_markdown(diag)
+    _renderizar_diagnostico_rich(diag)
+    assert "Ejecución Exitosa" not in capsys.readouterr().out
+
+
+def _script_con_gdb_falso(monkeypatch, evaluar):
+    falso = types.ModuleType("gdb")
+    falso.error = type("error", (RuntimeError,), {})
+    falso.MemoryError = type("MemoryError", (falso.error,), {})
+    falso.FRAME_UNWIND_NO_REASON, falso.FRAME_UNWIND_NULL_ID, falso.FRAME_UNWIND_OUTERMOST = 0, 1, 2
+    falso.parse_and_eval = evaluar
+    monkeypatch.setitem(sys.modules, "gdb", falso)
+    monkeypatch.delenv("HAL_CAPTURA_CONFIG", raising=False)
+    monkeypatch.delitem(sys.modules, "hal.gdb_captura", raising=False)
+    return importlib.import_module("hal.gdb_captura"), falso
+
+
+def test_siginfo_de_windows(monkeypatch):
+    # La forma de EXCEPTION_RECORD es la de windows_get_siginfo_type (gdb/windows-tdep.c).
+    def evaluar(expresion):
+        if expresion == "$_siginfo.AccessViolationInformation.Address":
+            return 0x1234
+        raise sys.modules["gdb"].error("There is no member named si_code.")
+
+    captura, _ = _script_con_gdb_falso(monkeypatch, evaluar)
+
+    assert captura.siginfo("SIGSEGV") == (1, "0x1234")
+
+
+def test_siginfo_de_linux(monkeypatch):
+    captura, _ = _script_con_gdb_falso(monkeypatch, lambda _: {"si_code": 2, "_sifields": {"_sigfault": {"si_addr": 16}}})
+
+    assert captura.siginfo("SIGSEGV") == (2, "0x10")
+
+
+def test_siginfo_de_una_senal_sin_direccion(monkeypatch):
+    captura, _ = _script_con_gdb_falso(monkeypatch, lambda _: pytest.fail("no hace falta leerlo"))
+
+    assert captura.siginfo("SIGABRT") == (None, None)

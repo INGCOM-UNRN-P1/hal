@@ -9,8 +9,9 @@ from hal.core.models import DiagnosticoCrash
 
 def exportar_html(diag: DiagnosticoCrash, titulo_documento: str = "Diagnóstico Forense de HAL") -> str:
     """Genera un reporte HTML autocontenido e interactivo a partir de un DiagnosticoCrash."""
-    estado_color = "#e63946" if diag.es_crash else "#2a9d8f"
-    estado_texto = f"FALLO: {diag.tipo_senal}" if diag.es_crash else "EJECUCIÓN EXITOSA"
+    estado_color = "#e63946" if diag.es_crash else "#e9a23b" if diag.termino_con_error else "#2a9d8f"
+    estado_texto = (f"FALLO: {diag.tipo_senal}" if diag.es_crash else
+                    "TERMINÓ CON ERROR" if diag.termino_con_error else "EJECUCIÓN EXITOSA")
 
     frames_rows = []
     for f in diag.frames:

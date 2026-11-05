@@ -143,6 +143,9 @@ def resumir(diag: DiagnosticoCrash) -> Dict[str, Optional[str]]:
         return {"donde": None, "codigo": None, "que_paso": f"No se pudo ejecutar: {diag.causa_raiz_titulo}.",
                 "que_hacer": "Si no compila, corregí primero los errores de compilación (daedalus los explica).",
                 "para_repasar": None}
+    if diag.termino_con_error:
+        return {"donde": None, "codigo": None, "que_paso": f"{diag.causa_raiz_titulo}.",
+                "que_hacer": diag.accion_correctiva, "para_repasar": None}
     if not diag.es_crash and diag.codigo_senal != "SIN_TERMINAR":
         return {"donde": None, "codigo": None, "que_paso": "El programa terminó sin cortarse.", "que_hacer": None,
                 "para_repasar": None}

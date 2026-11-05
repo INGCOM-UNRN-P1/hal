@@ -76,6 +76,11 @@ class DiagnosticoCrash:
     # Si la falla es de la pila: causa, función, bytes del marco y límite (ver core/pila.py).
     pila: Optional[Dict[str, Any]] = None
 
+    @property
+    def termino_con_error(self) -> bool:
+        """No se cayó, pero devolvió un código distinto de cero: tampoco es una ejecución exitosa."""
+        return self.codigo_senal == "EXIT_FAILURE"
+
     def to_dict(self) -> Dict[str, Any]:
         ruta_rel = _normalizar_ruta_relativa(self.archivo_falla)
         return {
