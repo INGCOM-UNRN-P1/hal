@@ -183,6 +183,7 @@ def _bufer_local(diag: DiagnosticoCrash, canario: bool) -> None:
         "2. Usá las versiones con límite (`fgets`, `snprintf`, `strncpy` con el terminador, `%9s` en "
         "`scanf`) y recordá el lugar del `'\\0'` al dimensionar una cadena.")
     diag.es_buffer_overflow_ret = True
+    diag.codigo_senal = "RET_ADDR_CORRUPTED"
     diag.pila = {"causa": "desborde-de-buffer-local", "funcion": diag.funcion_falla, "canario": canario}
 
 

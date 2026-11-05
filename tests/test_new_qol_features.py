@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import pytest
 from typer.testing import CliRunner
@@ -167,6 +168,7 @@ def test_invalid_free_detection():
     assert "pila" in diag.explicacion
 
 
+@pytest.mark.skipif(os.name == "nt", reason="la UCRT no aborta con un free inválido: el programa sigue")
 def test_invalid_free_execution(tmp_path: Path):
     c_code = tmp_path / "bad_free.c"
     c_code.write_text("""

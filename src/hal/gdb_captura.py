@@ -69,10 +69,16 @@ def recorrer():
 
 
 def pila_rota(marcos, cortada, llego_a_main):
+    """Si la pila está pisada. El motivo de parada no alcanza: gdb 15 dice «no reason» en toda la
+    cadena y gdb 17 un error. Lo que vale en los dos es que, sin llegar a `main`, después de un marco
+    del programa vienen direcciones sin símbolo, que son lo que quedó en lugar del retorno."""
     if llego_a_main or cortada or not marcos:
         return False
     try:
-        return marcos[-1].unwind_stop_reason() not in FINES_NORMALES
+        if marcos[-1].unwind_stop_reason() not in FINES_NORMALES:
+            return True
+        return any(marcos[i].find_sal().symtab is not None and marcos[i + 1].name() is None
+                   for i in range(len(marcos) - 1))
     except ERRORES:
         return True
 
