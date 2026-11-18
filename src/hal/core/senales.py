@@ -20,16 +20,28 @@ def _extraer_frame_y_variable_culpable(
     frames: List[StackFrame],
 ) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str], Optional[StackFrame]]:
     """Extrae archivo, línea, función, variable y frame culpable evitando bibliotecas del sistema."""
+    _FUNCIONES_SISTEMA = {
+        "raise", "abort", "gsignal", "malloc_printerr", "malloc_printerr_tail",
+        "__pthread_kill_implementation",
+    }
     frame_falla = None
     for f in frames:
-        if f.archivo and not f.archivo.startswith("/usr/") and not f.archivo.startswith("??") and not f.archivo.startswith("/lib"):
+        es_sistema = (
+            not f.archivo
+            or f.archivo.startswith("/usr/")
+            or f.archivo.startswith("??")
+            or f.archivo.startswith("/lib")
+            or f.archivo.startswith("./nptl/")
+            or f.archivo.startswith("./stdlib/")
+            or f.archivo.startswith("./debug/")
+            or (f.funcion and (f.funcion in _FUNCIONES_SISTEMA or f.funcion.startswith("__")))
+        )
+        if not es_sistema:
             frame_falla = f
             break
     if not frame_falla and frames:
         for f in frames:
-            if f.funcion and not f.funcion.startswith("__") and f.funcion not in (
-                "raise", "abort", "malloc_printerr", "malloc_printerr_tail", "__pthread_kill_implementation"
-            ):
+            if f.funcion and not f.funcion.startswith("__") and f.funcion not in _FUNCIONES_SISTEMA:
                 frame_falla = f
                 break
         if not frame_falla:
