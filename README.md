@@ -184,3 +184,7 @@ Con `--json`, estos comandos emiten el resultado como JSON por la salida estánd
 | `2` | Error de uso: comando, opción o argumento inválido. |
 
 <!-- p1:referencia:fin -->
+
+## Contacto
+
+Martín René Vilugrón - mrvilugron@unrn.edu.ar - Ingeniería en Computación UNRN Andina
